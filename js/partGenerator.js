@@ -538,23 +538,43 @@ const TYPES = {
       g.add(inner);
 
       for (let i = 0; i < p.teeth; i++) {
-        const a = (i / p.teeth) * Math.PI * 2 + rng() * 0.2;
-        const r = p.radius * (0.68 + rng() * 0.15);
+        const a = (i / p.teeth) * Math.PI * 2 + rng() * 0.15;
 
-        const tH = p.toothSize * (3.5 + rng() * 2.0);
-        const tR = p.toothSize * (0.5 + rng() * 0.2);
+        // On se place exactement sur la lèvre intérieure du tore
+        const r = p.radius - p.lipThickness * 0.6;
+
+        // Dents plus visibles et acérées
+        const tH = p.toothSize * (3.0 + rng() * 1.5);
+        const tR = p.toothSize * (0.6 + rng() * 0.3);
 
         const tooth = new THREE.Mesh(
           new THREE.ConeGeometry(tR, tH, 4),
           boneMat(new THREE.Color(0xffffee))
         );
-        tooth.position.set(
+
+        // Direction : vers le centre de la bouche, mais avec une légère
+        // inclinaison vers l'extérieur (+0.15 sur Y) pour qu'elles soient visibles
+        const toCenter = new THREE.Vector3(
+          -Math.cos(a),
+          0.15,
+          -Math.sin(a)
+        ).normalize();
+
+        // Oriente le cône (qui pointe vers +Y par défaut) vers le centre
+        tooth.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0),
+          toCenter
+        );
+
+        // Position : on remonte à Y=0.012 (juste au-dessus du trou noir)
+        const gumPos = new THREE.Vector3(
           Math.cos(a) * r,
-          tH * 0.45,
+          0.012,
           Math.sin(a) * r
         );
-        tooth.rotation.x = Math.PI;
-        tooth.rotation.z = (rng() - 0.5) * 0.3;
+
+        // On déplace la dent pour que sa BASE repose sur la gencive
+        tooth.position.copy(gumPos).addScaledVector(toCenter, tH / 2);
 
         tooth.userData.noConform = true;
         g.add(tooth);
