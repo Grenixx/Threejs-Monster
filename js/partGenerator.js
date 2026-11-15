@@ -122,6 +122,21 @@ const TYPES = {
       );
       tip.position.copy(curve.getPoint(1));
       g.add(tip);
+
+      // --- ANIMATION : Sauvegarde des positions ---
+      g.traverse(obj => {
+        if (obj.isMesh) {
+          obj.userData.basePos = obj.position.clone();
+          if (obj.geometry?.attributes?.position) {
+            obj.userData.baseGeoPos = obj.geometry.attributes.position.array.slice();
+          }
+        }
+      });
+
+      g.userData.animType = 'tentacle';
+      g.userData.phase = rng() * Math.PI * 2;
+      g.userData.height = p.height;
+
       return g;
     }
   },
@@ -179,6 +194,7 @@ const TYPES = {
       stalkHeight: 0.15 + rng() * 0.25
     }),
     build: (p, seed) => {
+      const rng = mulberry32(seed);
       const g = new THREE.Group();
       let baseY = 0;
 
@@ -190,43 +206,42 @@ const TYPES = {
       }
 
       const eyeY = baseY + p.size * 0.5;
+
+      const eyeballGroup = new THREE.Group();
+      eyeballGroup.position.y = eyeY;
+
       const eye = new THREE.Mesh(new THREE.SphereGeometry(p.size, 24, 24), EYE_MAT);
-      eye.position.y = eyeY;
-      g.add(eye);
+      eyeballGroup.add(eye);
 
       const irisColor = new THREE.Color().setHSL(p.irisHue, 0.9, 0.55);
       const iris = new THREE.Mesh(new THREE.SphereGeometry(p.size * 0.6, 20, 20), glowMat(irisColor));
-      iris.position.set(0, eyeY + p.size * 0.3, p.size * 0.6);
-      g.add(iris);
+      iris.position.set(0, p.size * 0.3, p.size * 0.6);
+      eyeballGroup.add(iris);
 
       let pupilGeo;
-      if (p.pupilType === 0) {
-        pupilGeo = new THREE.SphereGeometry(p.size * 0.28, 12, 12);
-      } else if (p.pupilType === 1) {
-        pupilGeo = new THREE.BoxGeometry(p.size * 0.1, p.size * 0.55, p.size * 0.2);
-      } else if (p.pupilType === 2) {
-        pupilGeo = new THREE.BoxGeometry(p.size * 0.4, p.size * 0.1, p.size * 0.2);
-      } else {
-        pupilGeo = new THREE.SphereGeometry(p.size * 0.22, 12, 12);
-      }
+      if (p.pupilType === 0) pupilGeo = new THREE.SphereGeometry(p.size * 0.28, 12, 12);
+      else if (p.pupilType === 1) pupilGeo = new THREE.BoxGeometry(p.size * 0.1, p.size * 0.55, p.size * 0.2);
+      else if (p.pupilType === 2) pupilGeo = new THREE.BoxGeometry(p.size * 0.4, p.size * 0.1, p.size * 0.2);
+      else pupilGeo = new THREE.SphereGeometry(p.size * 0.22, 12, 12);
+
       const pupil = new THREE.Mesh(pupilGeo, PUPIL_MAT);
-      pupil.position.set(0, eyeY + p.size * 0.3, p.size * 0.78);
-      g.add(pupil);
+      pupil.position.set(0, p.size * 0.3, p.size * 0.78);
+      eyeballGroup.add(pupil);
 
       if (p.pupilType === 3) {
-        const pupil2 = new THREE.Mesh(
-          new THREE.SphereGeometry(p.size * 0.15, 8, 8), PUPIL_MAT
-        );
-        pupil2.position.set(p.size * 0.2, eyeY + p.size * 0.3, p.size * 0.75);
-        g.add(pupil2);
+        const pupil2 = new THREE.Mesh(new THREE.SphereGeometry(p.size * 0.15, 8, 8), PUPIL_MAT);
+        pupil2.position.set(p.size * 0.2, p.size * 0.3, p.size * 0.75);
+        eyeballGroup.add(pupil2);
       }
 
-      const spec = new THREE.Mesh(
-        new THREE.SphereGeometry(p.size * 0.08, 6, 6),
-        mat(0xffffff, { roughness: 0 })
-      );
-      spec.position.set(p.size * 0.15, eyeY + p.size * 0.55, p.size * 0.75);
-      g.add(spec);
+      const spec = new THREE.Mesh(new THREE.SphereGeometry(p.size * 0.08, 6, 6), mat(0xffffff, { roughness: 0 }));
+      spec.position.set(p.size * 0.15, p.size * 0.55, p.size * 0.75);
+      eyeballGroup.add(spec);
+
+      g.add(eyeballGroup);
+
+      eyeballGroup.userData.animType = 'eye';
+      eyeballGroup.userData.phase = rng() * Math.PI * 2;
 
       return g;
     }
@@ -282,7 +297,6 @@ const TYPES = {
 
       for (let i = 0; i < p.spikes; i++) {
         const geo = new THREE.OctahedronGeometry(p.size, 0);
-
         const mesh = new THREE.Mesh(geo, crystalMat(baseColor));
         mesh.scale.y = p.stretch;
         mesh.position.y = (p.size * p.stretch) / 2;
@@ -319,15 +333,12 @@ const TYPES = {
       for (let i = 0; i <= p.segments; i++) {
         const t = i / p.segments;
         const a = t * Math.PI * 0.85;
-
         let x = Math.cos(a) * p.size;
         let y = Math.sin(a) * p.size * 0.85;
         let z = 0;
-
         z += p.sweep * t * t * p.size;
         z += p.cup * x * x / p.size;
         y += p.tipBend * t * t * p.size;
-
         pts.push(new THREE.Vector3(x, y, z));
       }
 
@@ -345,18 +356,16 @@ const TYPES = {
 
       for (let i = 1; i < pts.length; i++) {
         const ribCurve = new THREE.LineCurve3(new THREE.Vector3(0, 0, 0), pts[i]);
-        g.add(new THREE.Mesh(
-          new THREE.TubeGeometry(ribCurve, 6, 0.008, 6, false),
-          boneMat(new THREE.Color(0x2a1545))
-        ));
+        g.add(new THREE.Mesh(new THREE.TubeGeometry(ribCurve, 6, 0.008, 6, false), boneMat(new THREE.Color(0x2a1545))));
       }
 
-      const tip = new THREE.Mesh(
-        new THREE.SphereGeometry(0.025, 8, 8),
-        glowMat(color)
-      );
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 8), glowMat(color));
       tip.position.copy(pts[pts.length - 1]);
       g.add(tip);
+
+      // --- ANIMATION AILE ---
+      g.userData.animType = 'wing';
+      g.userData.phase = Math.random() * Math.PI * 2;
 
       return g;
     }
@@ -405,11 +414,7 @@ const TYPES = {
       const pts = [];
       for (let i = 0; i <= 8; i++) {
         const t = i / 8;
-        pts.push(new THREE.Vector3(
-          0,
-          t * p.height,
-          p.curve * t * t
-        ));
+        pts.push(new THREE.Vector3(0, t * p.height, p.curve * t * t));
       }
       const curve = new THREE.CatmullRomCurve3(pts);
       const earGeo = taperedTube(curve, p.width, 0.05, 20, 10);
@@ -419,10 +424,7 @@ const TYPES = {
 
       const ridgePts = pts.map(pt => new THREE.Vector3(0, pt.y, pt.z + 0.005));
       const ridgeCurve = new THREE.CatmullRomCurve3(ridgePts);
-      g.add(new THREE.Mesh(
-        new THREE.TubeGeometry(ridgeCurve, 12, 0.006, 4, false),
-        boneMat(color.clone().multiplyScalar(0.6))
-      ));
+      g.add(new THREE.Mesh(new THREE.TubeGeometry(ridgeCurve, 12, 0.006, 4, false), boneMat(color.clone().multiplyScalar(0.6))));
 
       const innerGeo = taperedTube(curve, p.width * 0.6, 0.05, 16, 8);
       const innerMesh = new THREE.Mesh(innerGeo, fleshMat(color.clone().multiplyScalar(0.5)));
@@ -443,42 +445,17 @@ const TYPES = {
     build: (p, seed) => {
       const g = new THREE.Group();
 
-      const discMat = new THREE.MeshBasicMaterial({
-        color: 0x050005,
-        side: THREE.DoubleSide,
-        polygonOffset: true,
-        polygonOffsetFactor: -4,
-        polygonOffsetUnits: -4
-      });
-      const disc = new THREE.Mesh(
-        new THREE.CircleGeometry(p.radius, 24),
-        discMat
-      );
+      const discMat = new THREE.MeshBasicMaterial({ color: 0x050005, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(p.radius, 24), discMat);
       disc.rotation.x = -Math.PI / 2;
       g.add(disc);
 
-      const innerDisc = new THREE.Mesh(
-        new THREE.CircleGeometry(p.radius * 0.6, 20),
-        new THREE.MeshBasicMaterial({
-          color: 0x000000,
-          side: THREE.DoubleSide,
-          polygonOffset: true,
-          polygonOffsetFactor: -5,
-          polygonOffsetUnits: -5
-        })
-      );
+      const innerDisc = new THREE.Mesh(new THREE.CircleGeometry(p.radius * 0.6, 20), new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 }));
       innerDisc.rotation.x = -Math.PI / 2;
       innerDisc.position.y = 0.001;
       g.add(innerDisc);
 
-      const rim = new THREE.Mesh(
-        new THREE.TorusGeometry(
-          p.radius + p.rimThickness * 0.5,
-          p.rimThickness,
-          6, 24
-        ),
-        fleshMat(new THREE.Color().setHSL(p.hue, 0.5, 0.22))
-      );
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(p.radius + p.rimThickness * 0.5, p.rimThickness, 6, 24), fleshMat(new THREE.Color().setHSL(p.hue, 0.5, 0.22)));
       rim.rotation.x = Math.PI / 2;
       rim.position.y = 0.005;
       g.add(rim);
@@ -513,10 +490,7 @@ const TYPES = {
       }
       lipGeo.computeVertexNormals();
 
-      const lips = new THREE.Mesh(
-        lipGeo,
-        fleshMat(new THREE.Color().setHSL(p.hue, 0.5, 0.28))
-      );
+      const lips = new THREE.Mesh(lipGeo, fleshMat(new THREE.Color().setHSL(p.hue, 0.5, 0.28)));
       lips.rotation.x = Math.PI / 2;
       g.add(lips);
 
@@ -529,55 +503,36 @@ const TYPES = {
         ipos.setZ(i, d2 / (2 * R) * p.curvature - 0.008);
       }
       innerGeo.computeVertexNormals();
-
-      const inner = new THREE.Mesh(
-        innerGeo,
-        new THREE.MeshBasicMaterial({ color: 0x050000, side: THREE.DoubleSide })
-      );
+      const inner = new THREE.Mesh(innerGeo, new THREE.MeshBasicMaterial({ color: 0x050000, side: THREE.DoubleSide }));
       inner.rotation.x = Math.PI / 2;
       g.add(inner);
 
       for (let i = 0; i < p.teeth; i++) {
         const a = (i / p.teeth) * Math.PI * 2 + rng() * 0.15;
-
-        // On se place exactement sur la lèvre intérieure du tore
-        const r = p.radius - p.lipThickness * 0.6;
-
-        // Dents plus visibles et acérées
+        const r = p.radius - p.lipThickness * 0.9;
         const tH = p.toothSize * (3.0 + rng() * 1.5);
         const tR = p.toothSize * (0.6 + rng() * 0.3);
 
-        const tooth = new THREE.Mesh(
-          new THREE.ConeGeometry(tR, tH, 4),
-          boneMat(new THREE.Color(0xffffee))
-        );
+        const toothPivot = new THREE.Group();
+        toothPivot.position.set(Math.cos(a) * r, 0.01, Math.sin(a) * r);
 
-        // Direction : vers le centre de la bouche, mais avec une légère
-        // inclinaison vers l'extérieur (+0.15 sur Y) pour qu'elles soient visibles
-        const toCenter = new THREE.Vector3(
-          -Math.cos(a),
-          0.15,
-          -Math.sin(a)
-        ).normalize();
+        const geo = new THREE.ConeGeometry(tR, tH, 4);
+        geo.translate(0, tH / 2, 0);
 
-        // Oriente le cône (qui pointe vers +Y par défaut) vers le centre
-        tooth.quaternion.setFromUnitVectors(
-          new THREE.Vector3(0, 1, 0),
-          toCenter
-        );
-
-        // Position : on remonte à Y=0.012 (juste au-dessus du trou noir)
-        const gumPos = new THREE.Vector3(
-          Math.cos(a) * r,
-          0.012,
-          Math.sin(a) * r
-        );
-
-        // On déplace la dent pour que sa BASE repose sur la gencive
-        tooth.position.copy(gumPos).addScaledVector(toCenter, tH / 2);
-
+        const tooth = new THREE.Mesh(geo, boneMat(new THREE.Color(0xffffee)));
         tooth.userData.noConform = true;
-        g.add(tooth);
+
+        const toCenter = new THREE.Vector3(-Math.cos(a), -0.15, -Math.sin(a)).normalize();
+        tooth.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), toCenter);
+
+        toothPivot.add(tooth);
+
+        toothPivot.userData.animType = 'tooth';
+        toothPivot.userData.isToothPivot = true;
+        toothPivot.userData.phase = rng() * Math.PI * 2;
+        toothPivot.userData.baseQuat = toothPivot.quaternion.clone();
+
+        g.add(toothPivot);
       }
 
       return g;

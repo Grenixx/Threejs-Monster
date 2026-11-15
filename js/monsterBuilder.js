@@ -7,19 +7,16 @@ import {
 } from './partGenerator.js';
 
 // ============================================================
-// BASES ALÉATOIRES (6 types)
+// BASES ALÉATOIRES
 // ============================================================
 function rollBase(rng) {
   const kind = Math.floor(rng() * 6);
   let geometryFn;
   let sockets = 24;
 
-  // 0: Sphère
   if (kind === 0) {
     geometryFn = () => new THREE.SphereGeometry(0.8, 32, 32);
-  }
-  // 1: Ellipsoïde
-  else if (kind === 1) {
+  } else if (kind === 1) {
     const sx = 0.65 + rng() * 0.6;
     const sy = 0.65 + rng() * 0.6;
     const sz = 0.65 + rng() * 0.6;
@@ -28,9 +25,7 @@ function rollBase(rng) {
       g.scale(sx, sy, sz);
       return g;
     };
-  }
-  // 2: Lumpy
-  else if (kind === 2) {
+  } else if (kind === 2) {
     const freq = 2 + rng() * 2;
     const amp = 0.08 + rng() * 0.1;
     const offset = rng() * 100;
@@ -51,9 +46,7 @@ function rollBase(rng) {
       return g;
     };
     sockets = 28;
-  }
-  // 3: Œuf
-  else if (kind === 3) {
+  } else if (kind === 3) {
     const taper = 0.45 + rng() * 0.35;
     geometryFn = () => {
       const g = new THREE.SphereGeometry(0.8, 32, 32);
@@ -70,9 +63,7 @@ function rollBase(rng) {
       g.computeVertexNormals();
       return g;
     };
-  }
-  // 4: Twisted
-  else if (kind === 4) {
+  } else if (kind === 4) {
     const twist = (rng() - 0.5) * 4;
     geometryFn = () => {
       const g = new THREE.SphereGeometry(0.8, 48, 48);
@@ -88,9 +79,7 @@ function rollBase(rng) {
       g.computeVertexNormals();
       return g;
     };
-  }
-  // 5: Amorphous
-  else {
+  } else {
     const f1 = 1.5 + rng() * 2;
     const f2 = 4 + rng() * 4;
     const a1 = 0.1 + rng() * 0.15;
@@ -114,17 +103,9 @@ function rollBase(rng) {
     sockets = 32;
   }
 
-  return {
-    name: `base_${kind}`,
-    geometryFn,
-    radius: 1.0,
-    sockets
-  };
+  return { name: `base_${kind}`, geometryFn, radius: 1.0, sockets };
 }
 
-// ============================================================
-// SOCKETS
-// ============================================================
 function getSockets(base) {
   const n = base.sockets;
   const R = base.radius;
@@ -143,9 +124,6 @@ function getSockets(base) {
   return points;
 }
 
-// ============================================================
-// RÈGLES
-// ============================================================
 const RULES = {
   eye:      { yMin:  0.1, yMax:  1.0, max: 4, scale: 1.2, sink: 0.12 },
   horn:     { yMin:  0.4, yMax:  1.0, max: 3, scale: 1.5, sink: 0.10 },
@@ -158,9 +136,7 @@ const RULES = {
   hole:     { yMin: -0.5, yMax:  0.8, max: 4, scale: 1.0, sink: 0.0  },
   ear:      { yMin:  0.2, yMax:  1.0, max: 2, scale: 1.2, sink: 0.03 }
 };
-// ============================================================
-// RECOLORISATION
-// ============================================================
+
 function recolorMesh(mesh, baseHue, variant) {
   const mainHue = (baseHue + variant + 1) % 1;
   const mainColor = new THREE.Color().setHSL(mainHue, 0.55, 0.45);
@@ -188,9 +164,6 @@ function recolorMesh(mesh, baseHue, variant) {
   });
 }
 
-// ============================================================
-// CONFORM : pousse les vertices dans le corps vers la surface
-// ============================================================
 function conformToBody(mesh, body, minOffset = 0.008) {
   mesh.updateMatrixWorld(true);
   body.updateMatrixWorld(true);
@@ -200,6 +173,27 @@ function conformToBody(mesh, body, minOffset = 0.008) {
   const P = new THREE.Vector3();
 
   mesh.traverse(child => {
+    // --- 1. Gestion des pivots de dents (Groupes) ---
+    if (child.userData.isToothPivot) {
+      P.copy(child.position).applyMatrix4(child.parent.matrixWorld);
+      const dist = P.length();
+      if (dist < 0.001) return;
+
+      const dir = P.clone().divideScalar(dist);
+      raycaster.set(origin, dir);
+      const hits = raycaster.intersectObject(body, false);
+
+      if (hits.length > 0) {
+        const hitDist = hits[0].point.length();
+        const target = dir.clone().multiplyScalar(hitDist + minOffset);
+        const worldToParent = child.parent.matrixWorld.clone().invert();
+        target.applyMatrix4(worldToParent);
+        child.position.copy(target);
+      }
+      return;
+    }
+
+    // --- 2. Gestion des vertices ---
     if (!child.isMesh) return;
     if (child.userData.noConform) return;
     const geo = child.geometry;
@@ -219,7 +213,6 @@ function conformToBody(mesh, body, minOffset = 0.008) {
 
       if (hits.length > 0) {
         const hitDist = hits[0].point.length();
-        // Seulement pousser si le vertex est DANS le corps
         if (dist < hitDist) {
           const target = dir.clone().multiplyScalar(hitDist + minOffset);
           target.applyMatrix4(worldToChild);
@@ -232,9 +225,6 @@ function conformToBody(mesh, body, minOffset = 0.008) {
   });
 }
 
-// ============================================================
-// ROLL MONSTER
-// ============================================================
 export function rollMonster(seed) {
   const rng = mulberry32(seed);
   const base = rollBase(rng);
@@ -300,9 +290,6 @@ export function rollMonster(seed) {
   };
 }
 
-// ============================================================
-// BUILD
-// ============================================================
 export function buildMonster(def) {
   const monster = new THREE.Group();
   const base = def.base;
@@ -338,7 +325,6 @@ export function buildMonster(def) {
 
     const dir = socketPos.clone().normalize();
 
-    // Raycast depuis l'extérieur vers le centre
     const rayStart = dir.clone().multiplyScalar(3.0);
     raycaster.set(rayStart, dir.clone().negate());
 
@@ -348,7 +334,6 @@ export function buildMonster(def) {
 
     if (hits.length > 0) {
       surfacePoint = hits[0].point;
-      // ⚠️ PAS de .negate() : la face.normal pointe déjà vers l'extérieur
       surfaceNormal = hits[0].face.normal.clone()
         .transformDirection(body.matrixWorld).normalize();
     } else {
@@ -356,12 +341,8 @@ export function buildMonster(def) {
       surfaceNormal = dir;
     }
 
-    // Position avec sink (retrait dans le corps)
     mesh.position.copy(surfacePoint).addScaledVector(surfaceNormal, -part.sink);
 
-    // =====================================================
-    // ORIENTATION STABLE via makeBasis
-    // =====================================================
     const localY = surfaceNormal.clone().normalize();
 
     let upRef = new THREE.Vector3(0, 1, 0);
@@ -375,7 +356,6 @@ export function buildMonster(def) {
     const basis = new THREE.Matrix4().makeBasis(localX, localY, localZ);
     mesh.quaternion.setFromRotationMatrix(basis);
 
-    // Tilt local (autour de X et Z locaux)
     if (part.tilt) {
       const tiltRng = mulberry32(part.seed + 99);
       const tiltX = (tiltRng() - 0.5) * part.tilt;
@@ -388,6 +368,9 @@ export function buildMonster(def) {
 
     mesh.scale.setScalar(part.scale);
 
+    mesh.userData.baseScale = part.scale;
+    mesh.userData.baseQuat = mesh.quaternion.clone();
+
     mesh.traverse(obj => {
       if (obj.isMesh) {
         obj.castShadow = true;
@@ -397,7 +380,6 @@ export function buildMonster(def) {
 
     monster.add(mesh);
 
-    // Conform pour les bouches : chaque vertex de la bouche épouse la surface
     if (part.type === 'mouth') {
       conformToBody(mesh, body, 0.006);
     }
@@ -406,9 +388,6 @@ export function buildMonster(def) {
   return monster;
 }
 
-// ============================================================
-// NOM
-// ============================================================
 const S1 = ['Azh', 'Vor', 'Kal', 'Nyx', 'Zul', 'Mor', 'Kar', 'Gha', 'Xar', 'Tho', 'Ulg', 'Vex', 'Ith', 'Oph', 'Dra'];
 const S2 = ['', '', 'a', 'o', 'u', 'e', 'ka', 'zo', 'ra', 'thi'];
 const S3 = ['k', 'th', 'n', 'z', 'x', 'gul', 'tor', 'zar', 'oth', 'iss', 'ak', 'or', 'an', 'ys'];

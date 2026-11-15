@@ -11,14 +11,13 @@ const { renderer, scene, camera, controls, spawnMonster, getCurrentMonster, upda
   createScene(threeCanvas);
 
 // =========================================================
-// GESTION DU CLIC ET DU DRAG (Rotation libre 360°)
+// GESTION DU CLIC ET DU DRAG
 // =========================================================
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let isDraggingMonster = false;
 let previousMousePosition = { x: 0, y: 0 };
 
-// Pré-allocation des objets pour éviter le garbage collector
 const qX = new THREE.Quaternion();
 const qY = new THREE.Quaternion();
 const axisX = new THREE.Vector3();
@@ -48,17 +47,12 @@ window.addEventListener('pointermove', (e) => {
 
     const monster = getCurrentMonster();
     if (monster) {
-      // 1. On récupère les axes X et Y "locaux" de la caméra
-      // Ça permet de tourner le monstre par rapport à ce que l'on voit à l'écran
       axisX.set(1, 0, 0).applyQuaternion(camera.quaternion);
       axisY.set(0, 1, 0).applyQuaternion(camera.quaternion);
 
-      // 2. On crée les rotations (vitesse de 0.01)
       qX.setFromAxisAngle(axisY, deltaX * 0.01);
       qY.setFromAxisAngle(axisX, deltaY * 0.01);
 
-      // 3. On applique la rotation au monstre (premultiply = par rapport au monde)
-      // Aucune limite n'est imposée, on peut le retourner dans tous les sens
       monster.quaternion.premultiply(qX).premultiply(qY);
     }
 
@@ -74,6 +68,91 @@ window.addEventListener('pointerup', () => {
 });
 
 // =========================================================
+// ANIMATION DES PARTIES
+// =========================================================
+function animateMonster(monster, time) {
+  if (!monster) return;
+
+  const t = time * 0.5;
+
+  monster.traverse(child => {
+    if (!child.userData.animType) return;
+
+    // 1. TENTACULES
+    if (child.userData.animType === 'tentacle') {
+      const phase = child.userData.phase;
+      const maxHeight = child.userData.height || 0.5;
+
+      child.traverse(mesh => {
+        if (!mesh.isMesh || !mesh.userData.baseGeoPos) return;
+
+        const meshBaseY = mesh.userData.basePos.y;
+
+        if (mesh.geometry.attributes.position.count > 100) {
+          const pos = mesh.geometry.attributes.position;
+          const base = mesh.userData.baseGeoPos;
+
+          for (let i = 0; i < pos.count; i++) {
+            const bx = base[i * 3];
+            const by = base[i * 3 + 1];
+            const bz = base[i * 3 + 2];
+
+            const progress = Math.max(0, Math.min(1, (meshBaseY + by) / maxHeight));
+            const amp = progress * progress * 0.25;
+
+            const waveX = Math.sin(t * 2.5 + phase + progress * 4) * amp;
+            const waveZ = Math.cos(t * 2.0 + phase * 1.3 + progress * 4) * amp;
+
+            pos.setX(i, bx + waveX);
+            pos.setZ(i, bz + waveZ);
+          }
+          pos.needsUpdate = true;
+          mesh.geometry.computeVertexNormals();
+        } else {
+          const progress = Math.max(0, Math.min(1, meshBaseY / maxHeight));
+          const amp = progress * progress * 0.25;
+
+          const waveX = Math.sin(t * 2.5 + phase + progress * 4) * amp;
+          const waveZ = Math.cos(t * 2.0 + phase * 1.3 + progress * 4) * amp;
+
+          mesh.position.x = mesh.userData.basePos.x + waveX;
+          mesh.position.z = mesh.userData.basePos.z + waveZ;
+        }
+      });
+    }
+
+    // 2. YEUX
+    if (child.userData.animType === 'eye') {
+      const phase = child.userData.phase;
+      child.rotation.y = Math.sin(t * 1.2 + phase) * 0.5;
+      child.rotation.x = Math.cos(t * 0.9 + phase) * 0.3;
+    }
+
+    // 3. DENTS
+    if (child.userData.animType === 'tooth') {
+      const phase = child.userData.phase;
+      const chewX = Math.sin(t * 4.0 + phase) * 0.15;
+      const chewZ = Math.cos(t * 4.0 + phase) * 0.15;
+
+      const chewQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(chewX, 0, chewZ));
+      child.quaternion.copy(child.userData.baseQuat).multiply(chewQuat);
+    }
+
+    // 4. AILES (Flapping haut/bas sur l'axe X)
+    if (child.userData.animType === 'wing') {
+      const phase = child.userData.phase;
+
+      // On tourne sur l'axe X local pour faire monter et descendre le bout de l'aile
+      const flapX = Math.sin(t * 2.0 + phase) * 0.6;
+
+      const flapQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(flapX, 0, 0));
+
+      child.quaternion.copy(child.userData.baseQuat).multiply(flapQuat);
+    }
+  });
+}
+
+// =========================================================
 // BOUTON REROLL
 // =========================================================
 function reroll() {
@@ -82,10 +161,9 @@ function reroll() {
   seedEl.textContent = `seed : ${info.seed}`;
   partsEl.textContent = `${info.partCount} parties`;
 
-  // Reset de la rotation
   const monster = getCurrentMonster();
   if (monster) {
-    monster.quaternion.identity(); // Remet la rotation à zéro
+    monster.quaternion.identity();
   }
 }
 
@@ -110,8 +188,7 @@ function animate() {
   controls.update();
   update(t);
 
-  // Le monstre ne tourne plus automatiquement.
-  // Sa rotation dépend uniquement de tes clics/glissers.
+  animateMonster(getCurrentMonster(), t);
 
   renderer.render(scene, camera);
 }
