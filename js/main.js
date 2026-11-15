@@ -2,33 +2,41 @@ import * as THREE from 'three';
 import { createScene } from './scene.js';
 
 const threeCanvas = document.getElementById('threeCanvas');
+const rerollBtn = document.getElementById('rerollBtn');
+const nameEl = document.getElementById('monsterName');
+const seedEl = document.getElementById('monsterSeed');
+const partsEl = document.getElementById('monsterParts');
 
-const { renderer, scene, camera, controls, sphere, floorUniforms, sphereUniforms } =
+const { renderer, scene, camera, controls, floorUniforms, spawnMonster, getCurrentMonster } =
   createScene(threeCanvas);
 
-function resize() {
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
+function reroll() {
+  const info = spawnMonster();
+  nameEl.textContent = info.name;
+  seedEl.textContent = `seed : ${info.seed}`;
+  partsEl.textContent = `${info.partCount} parties`;
+  console.log('👾 Monstre généré :', info);
 }
-window.addEventListener('resize', resize);
-resize();
+
+rerollBtn.addEventListener('click', reroll);
+reroll();
+
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
 
 const clock = new THREE.Clock();
 
 function animate() {
   requestAnimationFrame(animate);
   const t = clock.getElapsedTime();
-
   controls.update();
   floorUniforms.uTime.value = t;
-  sphereUniforms.uTime.value = t;
-  sphereUniforms.uCameraPos.value.copy(camera.position);
 
-  sphere.rotation.y = t * 0.3;
-  sphere.position.y = 0.8 + Math.sin(t * 1.5) * 0.05;
+  const m = getCurrentMonster();
+  if (m) m.rotation.y = t * 0.4;
 
   renderer.render(scene, camera);
 }
