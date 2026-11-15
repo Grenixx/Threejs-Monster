@@ -154,9 +154,10 @@ const RULES = {
   crystal:  { yMin: -0.2, yMax:  0.9, max: 4, scale: 1.5, sink: 0.10 },
   wing:     { yMin: -0.2, yMax:  0.6, max: 2, scale: 1.6, sink: 0.02 },
   spike:    { yMin: -0.6, yMax:  1.0, max: 6, scale: 1.3, sink: 0.10 },
-  mouth:    { yMin: -0.3, yMax:  0.4, max: 2, scale: 1.2, sink: 0.02 }
+  mouth:    { yMin: -0.3, yMax:  0.4, max: 2, scale: 1.2, sink: 0.02 },
+  hole:     { yMin: -0.5, yMax:  0.8, max: 4, scale: 1.0, sink: 0.0  },
+  ear:      { yMin:  0.2, yMax:  1.0, max: 2, scale: 1.2, sink: 0.03 }
 };
-
 // ============================================================
 // RECOLORISATION
 // ============================================================

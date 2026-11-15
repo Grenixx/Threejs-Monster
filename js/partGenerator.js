@@ -83,7 +83,6 @@ function taperedTube(curve, baseRadius, tipScale = 0.1, segments = 30, radial = 
 // ============================================================
 const TYPES = {
 
-  // ---------------- TENTACULE ----------------
   tentacle: {
     generate: (rng) => ({
       height: 0.55 + rng() * 0.4,
@@ -91,7 +90,7 @@ const TYPES = {
       jitter: 0.4 + rng() * 0.4,
       hue: rng() > 0.5 ? 0.72 + rng() * 0.15 : rng() * 0.15,
       suckers: 4 + Math.floor(rng() * 4),
-      tipBulb: 0.3 + rng() * 0.6 // ampoule au bout plus ou moins grosse
+      tipBulb: 0.3 + rng() * 0.6
     }),
     build: (p, seed) => {
       const rng = mulberry32(seed);
@@ -127,7 +126,6 @@ const TYPES = {
     }
   },
 
-  // ---------------- CORNE ----------------
   horn: {
     generate: (rng) => ({
       height: 0.35 + rng() * 0.35,
@@ -135,7 +133,7 @@ const TYPES = {
       bendX: (rng() - 0.5) * 1.0,
       bendZ: (rng() - 0.5) * 1.0,
       hue: rng() * 0.1 + 0.05,
-      ridges: Math.floor(rng() * 5),          // anneaux décoratifs
+      ridges: Math.floor(rng() * 5),
       tipSharpness: 0.01 + rng() * 0.04
     }),
     build: (p, seed) => {
@@ -154,7 +152,6 @@ const TYPES = {
 
       g.add(new THREE.Mesh(taperedTube(curve, p.baseRadius, p.tipSharpness, 24, 8), boneMat(color)));
 
-      // Anneaux de croissance
       for (let i = 0; i < p.ridges; i++) {
         const t = 0.12 + (i / Math.max(p.ridges, 1)) * 0.6;
         const pt = curve.getPoint(t);
@@ -173,12 +170,11 @@ const TYPES = {
     }
   },
 
-  // ---------------- ŒIL ----------------
   eye: {
     generate: (rng) => ({
       size: 0.15 + rng() * 0.1,
       irisHue: rng(),
-      pupilType: Math.floor(rng() * 4), // 0: rond, 1: fendu, 2: croix, 3: double
+      pupilType: Math.floor(rng() * 4),
       hasStalk: rng() > 0.4,
       stalkHeight: 0.15 + rng() * 0.25
     }),
@@ -203,7 +199,6 @@ const TYPES = {
       iris.position.set(0, eyeY + p.size * 0.3, p.size * 0.6);
       g.add(iris);
 
-      // Pupille selon le type
       let pupilGeo;
       if (p.pupilType === 0) {
         pupilGeo = new THREE.SphereGeometry(p.size * 0.28, 12, 12);
@@ -219,10 +214,8 @@ const TYPES = {
       g.add(pupil);
 
       if (p.pupilType === 3) {
-        // Deuxième pupille
         const pupil2 = new THREE.Mesh(
-          new THREE.SphereGeometry(p.size * 0.15, 8, 8),
-          PUPIL_MAT
+          new THREE.SphereGeometry(p.size * 0.15, 8, 8), PUPIL_MAT
         );
         pupil2.position.set(p.size * 0.2, eyeY + p.size * 0.3, p.size * 0.75);
         g.add(pupil2);
@@ -239,7 +232,6 @@ const TYPES = {
     }
   },
 
-  // ---------------- GRIFFE ----------------
   claw: {
     generate: (rng) => ({
       fingerCount: 3 + Math.floor(rng() * 3),
@@ -276,7 +268,6 @@ const TYPES = {
     }
   },
 
-  // ---------------- CRISTAL ----------------
   crystal: {
     generate: (rng) => ({
       spikes: 1 + Math.floor(rng() * 4),
@@ -291,12 +282,6 @@ const TYPES = {
 
       for (let i = 0; i < p.spikes; i++) {
         const geo = new THREE.OctahedronGeometry(p.size, 0);
-        const pos = geo.attributes.position;
-        for (let j = 0; j < pos.count; j++) {
-          pos.setX(j, pos.getX(j) * (0.6 + rng() * 0.8));
-          pos.setZ(j, pos.getZ(j) * (0.6 + rng() * 0.8));
-        }
-        geo.computeVertexNormals();
 
         const mesh = new THREE.Mesh(geo, crystalMat(baseColor));
         mesh.scale.y = p.stretch;
@@ -317,15 +302,14 @@ const TYPES = {
     }
   },
 
-  // ---------------- AILE (avec courbure) ----------------
   wing: {
     generate: (rng) => ({
       size: 0.35 + rng() * 0.3,
       segments: 4 + Math.floor(rng() * 4),
       hue: rng(),
-      sweep: (rng() - 0.5) * 1.2,   // balayage arrière
-      cup: (rng() - 0.5) * 1.0,     // "bol" de l'aile
-      tipBend: (rng() - 0.5) * 0.6  // recourbement de la pointe
+      sweep: (rng() - 0.5) * 1.2,
+      cup: (rng() - 0.5) * 1.0,
+      tipBend: (rng() - 0.5) * 0.6
     }),
     build: (p, seed) => {
       const g = new THREE.Group();
@@ -340,19 +324,13 @@ const TYPES = {
         let y = Math.sin(a) * p.size * 0.85;
         let z = 0;
 
-        // Balayage : l'aile se recourbe vers l'arrière
         z += p.sweep * t * t * p.size;
-
-        // Cup : l'aile se creuse (les bords remontent)
         z += p.cup * x * x / p.size;
-
-        // Pointe qui se recourbe vers le haut/bas
         y += p.tipBend * t * t * p.size;
 
         pts.push(new THREE.Vector3(x, y, z));
       }
 
-      // Membrane
       const verts = [0, 0, 0];
       const indices = [];
       for (let i = 0; i < pts.length; i++) {
@@ -365,7 +343,6 @@ const TYPES = {
       geo.computeVertexNormals();
       g.add(new THREE.Mesh(geo, membraneMat(color)));
 
-      // Nervures qui suivent la courbure
       for (let i = 1; i < pts.length; i++) {
         const ribCurve = new THREE.LineCurve3(new THREE.Vector3(0, 0, 0), pts[i]);
         g.add(new THREE.Mesh(
@@ -374,7 +351,6 @@ const TYPES = {
         ));
       }
 
-      // Pointe lumineuse
       const tip = new THREE.Mesh(
         new THREE.SphereGeometry(0.025, 8, 8),
         glowMat(color)
@@ -386,14 +362,13 @@ const TYPES = {
     }
   },
 
-  // ---------------- ÉPINE ----------------
   spike: {
     generate: (rng) => ({
       height: 0.2 + rng() * 0.3,
       width: 0.05 + rng() * 0.04,
       bend: (rng() - 0.5) * 0.5,
       hue: rng() * 0.1,
-      flatten: 0.6 + rng() * 0.6 // <1 = aplati, >1 = large
+      flatten: 0.6 + rng() * 0.6
     }),
     build: (p, seed) => {
       const g = new THREE.Group();
@@ -416,7 +391,102 @@ const TYPES = {
     }
   },
 
-  // ---------------- BOUCHE (corrigée) ----------------
+  ear: {
+    generate: (rng) => ({
+      height: 0.22 + rng() * 0.22,
+      width: 0.09 + rng() * 0.06,
+      curve: (rng() - 0.5) * 0.3,
+      hue: 0.75 + rng() * 0.15
+    }),
+    build: (p, seed) => {
+      const g = new THREE.Group();
+      const color = new THREE.Color().setHSL(p.hue, 0.4, 0.4);
+
+      const pts = [];
+      for (let i = 0; i <= 8; i++) {
+        const t = i / 8;
+        pts.push(new THREE.Vector3(
+          0,
+          t * p.height,
+          p.curve * t * t
+        ));
+      }
+      const curve = new THREE.CatmullRomCurve3(pts);
+      const earGeo = taperedTube(curve, p.width, 0.05, 20, 10);
+      const earMesh = new THREE.Mesh(earGeo, fleshMat(color));
+      earMesh.scale.z = 0.35;
+      g.add(earMesh);
+
+      const ridgePts = pts.map(pt => new THREE.Vector3(0, pt.y, pt.z + 0.005));
+      const ridgeCurve = new THREE.CatmullRomCurve3(ridgePts);
+      g.add(new THREE.Mesh(
+        new THREE.TubeGeometry(ridgeCurve, 12, 0.006, 4, false),
+        boneMat(color.clone().multiplyScalar(0.6))
+      ));
+
+      const innerGeo = taperedTube(curve, p.width * 0.6, 0.05, 16, 8);
+      const innerMesh = new THREE.Mesh(innerGeo, fleshMat(color.clone().multiplyScalar(0.5)));
+      innerMesh.scale.z = 0.2;
+      innerMesh.position.z = -0.012;
+      g.add(innerMesh);
+
+      return g;
+    }
+  },
+
+  hole: {
+    generate: (rng) => ({
+      radius: 0.06 + rng() * 0.05,
+      rimThickness: 0.015 + rng() * 0.01,
+      hue: rng() * 0.1
+    }),
+    build: (p, seed) => {
+      const g = new THREE.Group();
+
+      const discMat = new THREE.MeshBasicMaterial({
+        color: 0x050005,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4
+      });
+      const disc = new THREE.Mesh(
+        new THREE.CircleGeometry(p.radius, 24),
+        discMat
+      );
+      disc.rotation.x = -Math.PI / 2;
+      g.add(disc);
+
+      const innerDisc = new THREE.Mesh(
+        new THREE.CircleGeometry(p.radius * 0.6, 20),
+        new THREE.MeshBasicMaterial({
+          color: 0x000000,
+          side: THREE.DoubleSide,
+          polygonOffset: true,
+          polygonOffsetFactor: -5,
+          polygonOffsetUnits: -5
+        })
+      );
+      innerDisc.rotation.x = -Math.PI / 2;
+      innerDisc.position.y = 0.001;
+      g.add(innerDisc);
+
+      const rim = new THREE.Mesh(
+        new THREE.TorusGeometry(
+          p.radius + p.rimThickness * 0.5,
+          p.rimThickness,
+          6, 24
+        ),
+        fleshMat(new THREE.Color().setHSL(p.hue, 0.5, 0.22))
+      );
+      rim.rotation.x = Math.PI / 2;
+      rim.position.y = 0.005;
+      g.add(rim);
+
+      return g;
+    }
+  },
+
   mouth: {
     generate: (rng) => ({
       radius: 0.1 + rng() * 0.06,
@@ -430,10 +500,8 @@ const TYPES = {
       const rng = mulberry32(seed);
       const g = new THREE.Group();
 
-      // Rayon approximatif du corps pour courber la bouche
       const R = 0.85;
 
-      // --- LÈVRES : tore avec courbure intégrée ---
       const lipGeo = new THREE.TorusGeometry(p.radius, p.lipThickness, 12, 32);
       const pos = lipGeo.attributes.position;
       for (let i = 0; i < pos.count; i++) {
@@ -441,7 +509,6 @@ const TYPES = {
         const y = pos.getY(i);
         const z = pos.getZ(i);
         const d2 = x * x + y * y;
-        // Courbure : l'anneau se bombe vers le bas (-Z local → +Y groupe)
         pos.setZ(i, z + d2 / (2 * R) * p.curvature);
       }
       lipGeo.computeVertexNormals();
@@ -453,7 +520,6 @@ const TYPES = {
       lips.rotation.x = Math.PI / 2;
       g.add(lips);
 
-      // --- INTÉRIEUR : disque sombre, légèrement en retrait ---
       const innerGeo = new THREE.CircleGeometry(p.radius * 0.85, 32);
       const ipos = innerGeo.attributes.position;
       for (let i = 0; i < ipos.count; i++) {
@@ -471,22 +537,24 @@ const TYPES = {
       inner.rotation.x = Math.PI / 2;
       g.add(inner);
 
-      // --- DENTS : pointent vers l'extérieur (+Y local), tailles variées ---
       for (let i = 0; i < p.teeth; i++) {
         const a = (i / p.teeth) * Math.PI * 2 + rng() * 0.2;
         const r = p.radius * (0.68 + rng() * 0.15);
-        const tH = p.toothSize * (1.2 + rng() * 2.2);
-        const tR = p.toothSize * (0.6 + rng() * 0.5);
+
+        const tH = p.toothSize * (3.5 + rng() * 2.0);
+        const tR = p.toothSize * (0.5 + rng() * 0.2);
 
         const tooth = new THREE.Mesh(
-          new THREE.ConeGeometry(tR, tH, 5),
+          new THREE.ConeGeometry(tR, tH, 4),
           boneMat(new THREE.Color(0xffffee))
         );
         tooth.position.set(
           Math.cos(a) * r,
-          tH * 0.4,
+          tH * 0.45,
           Math.sin(a) * r
         );
+        tooth.rotation.x = Math.PI;
+        tooth.rotation.z = (rng() - 0.5) * 0.3;
 
         tooth.userData.noConform = true;
         g.add(tooth);
