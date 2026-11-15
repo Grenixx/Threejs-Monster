@@ -7,7 +7,7 @@ const nameEl = document.getElementById('monsterName');
 const seedEl = document.getElementById('monsterSeed');
 const partsEl = document.getElementById('monsterParts');
 
-const { renderer, scene, camera, controls, floorUniforms, spawnMonster, getCurrentMonster } =
+const { renderer, scene, camera, controls, spawnMonster, getCurrentMonster, update } =
   createScene(threeCanvas);
 
 function reroll() {
@@ -15,7 +15,6 @@ function reroll() {
   nameEl.textContent = info.name;
   seedEl.textContent = `seed : ${info.seed}`;
   partsEl.textContent = `${info.partCount} parties`;
-  console.log('👾 Monstre généré :', info);
 }
 
 rerollBtn.addEventListener('click', reroll);
@@ -32,8 +31,9 @@ const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
   const t = clock.getElapsedTime();
+
   controls.update();
-  floorUniforms.uTime.value = t;
+  update(t); // Met à jour les particules, anneaux, etc.
 
   const m = getCurrentMonster();
   if (m) m.rotation.y = t * 0.4;
