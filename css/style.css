@@ -25,6 +25,7 @@ html, body {
   z-index: 10;
   text-transform: uppercase;
   letter-spacing: 3px;
+  transition: opacity 0.4s ease-in-out; /* Fondu pour le texte */
 }
 
 #monsterName {

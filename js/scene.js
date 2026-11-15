@@ -5,11 +5,7 @@ import { rollMonster, buildMonster } from './monsterBuilder.js';
 import { randomSeed } from './rng.js';
 
 export function createScene(canvas) {
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias: false,
-    alpha: false
-  });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
   renderer.setPixelRatio(0.35);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
@@ -18,23 +14,18 @@ export function createScene(canvas) {
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x060210, 0.04);
 
-  const camera = new THREE.PerspectiveCamera(
-    42, window.innerWidth / window.innerHeight, 0.1, 100
-  );
+  const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 500);
   camera.position.set(2.2, 1.8, 3.0);
 
   const controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 0.9, 0);
+  controls.target.set(0, 1.2, 0);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.minDistance = 2;
   controls.maxDistance = 8;
-  controls.maxPolarAngle = Math.PI / 2 + 0.15;
+  controls.maxPolarAngle = Math.PI / 2;
   controls.update();
 
-  // =========================================================
-  // CIEL (avec uniforms de couleur)
-  // =========================================================
   const skyUniforms = {
     uColorTop: { value: new THREE.Color(0x010003) },
     uColorBottom: { value: new THREE.Color(0x1a032a) }
@@ -46,23 +37,18 @@ export function createScene(canvas) {
     side: THREE.BackSide,
     depthWrite: false
   });
-  scene.add(new THREE.Mesh(new THREE.SphereGeometry(50, 32, 32), skyMat));
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(300, 32, 32), skyMat));
 
-  // =========================================================
-  // ÉCLAIRAGE
-  // =========================================================
   scene.add(new THREE.HemisphereLight(0x6644ff, 0x110022, 0.3));
 
   const keyLight = new THREE.DirectionalLight(0xffeedd, 1.5);
   keyLight.position.set(4, 6, 4);
   keyLight.castShadow = true;
   keyLight.shadow.mapSize.set(1024, 1024);
-  keyLight.shadow.camera.left   = -4;
-  keyLight.shadow.camera.right  =  4;
-  keyLight.shadow.camera.top    =  4;
+  keyLight.shadow.camera.left = -4;
+  keyLight.shadow.camera.right = 4;
+  keyLight.shadow.camera.top = 4;
   keyLight.shadow.camera.bottom = -4;
-  keyLight.shadow.camera.near   =  0.5;
-  keyLight.shadow.camera.far    =  15;
   keyLight.shadow.bias = -0.0005;
   scene.add(keyLight);
 
@@ -82,37 +68,28 @@ export function createScene(canvas) {
   scene.add(spotLight);
   scene.add(spotLight.target);
 
-  // =========================================================
-  // SOL AVEC VOLUME (Collines)
-  // =========================================================
   const floorUniforms = {
     uTime: { value: 0 },
     uGrid: { value: new THREE.Color(0x7a3ff2) },
-    uBg:   { value: new THREE.Color(0x060210) }
+    uBg:   { value: new THREE.Color(0x060210) },
+    uFogColor: { value: new THREE.Color(0x060210) },
+    uFogDensity: { value: 0.04 }
   };
 
-  // Géométrie subdivisée (128x128 segments pour avoir de belles courbes)
-  const floorGeo = new THREE.PlaneGeometry(60, 60, 128, 128);
+  const floorGeo = new THREE.PlaneGeometry(200, 200, 128, 128);
   const pos = floorGeo.attributes.position;
 
-  // Déplacement des vertices pour créer des collines
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
-    const y = pos.getY(i); // correspond à -Z dans le monde
-
-    // Distance par rapport au centre
+    const y = pos.getY(i);
     const dist = Math.sqrt(x * x + y * y);
+    const flatZone = 4.0;
+    const falloff = Math.min(1, Math.max(0, (dist - flatZone) / 15));
 
-    // On garde le centre parfaitement plat (rayon 3)
-    const flatZone = 3.0;
-    const falloff = Math.min(1, Math.max(0, (dist - flatZone) / 10));
+    const noise = Math.sin(x * 0.08) * Math.cos(y * 0.08) * 4.0
+                + Math.sin(x * 0.3) * Math.cos(y * 0.3) * 1.2
+                + Math.sin(x * 0.9) * Math.cos(y * 0.9) * 0.3;
 
-    // Fonction de bruit simple
-    const noise = Math.sin(x * 0.3) * Math.cos(y * 0.3) * 1.2
-                + Math.sin(x * 0.8) * Math.cos(y * 0.9) * 0.4
-                + Math.sin(x * 2.0) * Math.cos(y * 2.0) * 0.1;
-
-    // Décalage vertical (Z local, qui devient Y après rotation)
     pos.setZ(i, noise * falloff);
   }
   floorGeo.computeVertexNormals();
@@ -122,16 +99,15 @@ export function createScene(canvas) {
     new THREE.ShaderMaterial({
       uniforms: floorUniforms,
       vertexShader: floorVert,
-      fragmentShader: floorFrag
+      fragmentShader: floorFrag,
+      side: THREE.DoubleSide
     })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
 
-  // =========================================================
-  // PARTICULES (Poussière magique)
-  // =========================================================
+  // Particules
   const particleCount = 300;
   const particleGeo = new THREE.BufferGeometry();
   const positions = new Float32Array(particleCount * 3);
@@ -180,37 +156,22 @@ export function createScene(canvas) {
   const particles = new THREE.Points(particleGeo, particleMat);
   scene.add(particles);
 
-  // =========================================================
-  // MONSTRE & PALETTE DYNAMIQUE
-  // =========================================================
   let currentMonster = null;
   let currentDef = null;
 
+  // Lerp couleurs
+  const targetColors = {
+    grid: new THREE.Color(), bg: new THREE.Color(), skyTop: new THREE.Color(), skyBottom: new THREE.Color()
+  };
+
+  // Animation de spawn (le monstre émerge du sol)
+  let spawnAnim = null;
+
   function applyPalette(hue) {
-    // Couleur du monstre (base)
-    const baseColor = new THREE.Color().setHSL(hue, 0.6, 0.5);
-
-    // Couleur de la grille (plus saturée, teinte proche)
-    const gridColor = new THREE.Color().setHSL((hue + 0.1) % 1.0, 0.8, 0.5);
-
-    // Fond du sol (très sombre, teinte du monstre)
-    const bgColor = new THREE.Color().setHSL(hue, 0.5, 0.04);
-
-    // Ciel (dégradé dans les tons du monstre)
-    const skyTop = new THREE.Color().setHSL(hue, 0.6, 0.01);
-    const skyBottom = new THREE.Color().setHSL(hue, 0.5, 0.12);
-
-    // Application
-    floorUniforms.uGrid.value.copy(gridColor);
-    floorUniforms.uBg.value.copy(bgColor);
-    skyUniforms.uColorTop.value.copy(skyTop);
-    skyUniforms.uColorBottom.value.copy(skyBottom);
-    particleMat.uniforms.uColor.value.copy(gridColor);
-
-    // On adapte aussi les lumières
-    rimLight.color.copy(gridColor);
-    fillLight.color.copy(skyBottom);
-    scene.fog.color.copy(bgColor);
+    targetColors.grid.setHSL((hue + 0.1) % 1.0, 0.8, 0.5);
+    targetColors.bg.setHSL(hue, 0.5, 0.04);
+    targetColors.skyTop.setHSL(hue, 0.6, 0.01);
+    targetColors.skyBottom.setHSL(hue, 0.5, 0.12);
   }
 
   function spawnMonster() {
@@ -225,21 +186,31 @@ export function createScene(canvas) {
     currentDef = rollMonster(seed);
     currentMonster = buildMonster(currentDef);
 
-    // Auto-fit et placement sur le sol (Y=0)
     const bbox = new THREE.Box3().setFromObject(currentMonster);
     const size = bbox.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
-    const targetSize = 2.4;
-    const scale = targetSize / maxDim;
+    const scale = 2.4 / maxDim;
     currentMonster.scale.setScalar(scale);
 
     const bbox2 = new THREE.Box3().setFromObject(currentMonster);
-    currentMonster.position.y = -bbox2.min.y; // Pose exactement sur le sol
+    const finalY = -bbox2.min.y + 0.5;
+
+    // Le monstre démarre sous le sol et va émerger
+    currentMonster.position.y = finalY - 5;
+    currentMonster.position.x = 0;
+    currentMonster.position.z = 0;
+    currentMonster.quaternion.identity();
 
     scene.add(currentMonster);
-
-    // On applique la palette du monstre à l'environnement
     applyPalette(currentDef.baseHue);
+
+    // Init animation de spawn
+    spawnAnim = {
+      startTime: null,
+      duration: 0.9,
+      startY: currentMonster.position.y,
+      targetY: finalY
+    };
 
     return {
       name: currentDef.name,
@@ -248,12 +219,40 @@ export function createScene(canvas) {
     };
   }
 
-  // =========================================================
-  // UPDATE
-  // =========================================================
   function update(t) {
     floorUniforms.uTime.value = t;
     particleMat.uniforms.uTime.value = t;
+
+    // --- Lerp couleurs ---
+    const speed = 0.05;
+    floorUniforms.uGrid.value.lerp(targetColors.grid, speed);
+    floorUniforms.uBg.value.lerp(targetColors.bg, speed);
+    floorUniforms.uFogColor.value.lerp(targetColors.skyBottom, speed);
+
+    skyUniforms.uColorTop.value.lerp(targetColors.skyTop, speed);
+    skyUniforms.uColorBottom.value.lerp(targetColors.skyBottom, speed);
+    particleMat.uniforms.uColor.value.lerp(targetColors.grid, speed);
+
+    rimLight.color.lerp(targetColors.grid, speed);
+    fillLight.color.lerp(targetColors.skyBottom, speed);
+    scene.fog.color.lerp(targetColors.skyBottom, speed);
+
+    // --- Animation de spawn (le monstre monte du sol) ---
+    if (spawnAnim && currentMonster) {
+      if (spawnAnim.startTime === null) spawnAnim.startTime = t;
+
+      const elapsed = t - spawnAnim.startTime;
+      const progress = Math.min(1, elapsed / spawnAnim.duration);
+      // Ease-out cubic : rapide au début, ralentit à la fin
+      const ease = 1 - Math.pow(1 - progress, 3);
+
+      currentMonster.position.y = spawnAnim.startY + (spawnAnim.targetY - spawnAnim.startY) * ease;
+
+      if (progress >= 1) {
+        currentMonster.position.y = spawnAnim.targetY;
+        spawnAnim = null;
+      }
+    }
   }
 
   return {

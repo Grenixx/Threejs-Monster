@@ -11,6 +11,43 @@ const { renderer, scene, camera, controls, spawnMonster, getCurrentMonster, upda
   createScene(threeCanvas);
 
 // =========================================================
+// ANIMATION DE TEXTE (HACKER SCRAMBLE)
+// =========================================================
+const CHARS = "!<>-_\\/[]{}—=+*^?#________";
+let textIntervals = {};
+
+function scrambleText(el, newText, duration = 800) {
+  // Annule l'animation précédente sur cet élément s'il y en a une
+  if (textIntervals[el.id]) clearInterval(textIntervals[el.id]);
+
+  const totalFrames = Math.floor(duration / 30); // ~30ms par frame
+  let frame = 0;
+
+  textIntervals[el.id] = setInterval(() => {
+    let display = "";
+    // On itère sur la longueur du nouveau texte
+    for (let i = 0; i < newText.length; i++) {
+      // Le point de révélation progresse avec le temps
+      const revealPoint = (frame / totalFrames) * newText.length;
+
+      if (i < revealPoint) {
+        display += newText[i]; // La lettre est révélée
+      } else {
+        // Sinon on affiche un caractère aléatoire
+        display += CHARS[Math.floor(Math.random() * CHARS.length)];
+      }
+    }
+    el.textContent = display;
+
+    frame++;
+    if (frame >= totalFrames) {
+      clearInterval(textIntervals[el.id]);
+      el.textContent = newText; // Sécurité : on s'assure que le texte final est parfait
+    }
+  }, 30);
+}
+
+// =========================================================
 // GESTION DU CLIC ET DU DRAG
 // =========================================================
 const raycaster = new THREE.Raycaster();
@@ -138,28 +175,26 @@ function animateMonster(monster, time) {
       child.quaternion.copy(child.userData.baseQuat).multiply(chewQuat);
     }
 
-    // 4. AILES (Flapping haut/bas sur l'axe X)
+    // 4. AILES
     if (child.userData.animType === 'wing') {
       const phase = child.userData.phase;
-
-      // On tourne sur l'axe X local pour faire monter et descendre le bout de l'aile
       const flapX = Math.sin(t * 2.0 + phase) * 0.6;
-
       const flapQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(flapX, 0, 0));
-
       child.quaternion.copy(child.userData.baseQuat).multiply(flapQuat);
     }
   });
 }
 
 // =========================================================
-// BOUTON REROLL
+// BOUTON REROLL (Avec animation de texte)
 // =========================================================
 function reroll() {
   const info = spawnMonster();
-  nameEl.textContent = info.name;
-  seedEl.textContent = `seed : ${info.seed}`;
-  partsEl.textContent = `${info.partCount} parties`;
+
+  // Lancement des animations de texte
+  scrambleText(nameEl, info.name.toUpperCase(), 600);
+  scrambleText(seedEl, `seed : ${info.seed}`, 800);
+  scrambleText(partsEl, `${info.partCount} parties`, 700);
 
   const monster = getCurrentMonster();
   if (monster) {

@@ -1,6 +1,3 @@
-// ============================================================
-// SOL
-// ============================================================
 export const floorVert = /* glsl */`
   varying vec3 vWorldPos;
   void main() {
@@ -13,8 +10,8 @@ export const floorVert = /* glsl */`
 export const floorFrag = /* glsl */`
   precision mediump float;
   varying vec3 vWorldPos;
-  uniform vec3 uGrid, uBg;
-  uniform float uTime;
+  uniform vec3 uGrid, uBg, uFogColor;
+  uniform float uTime, uFogDensity;
 
   float grid(vec2 c) {
     vec2 g = abs(fract(c - 0.5) - 0.5) / fwidth(c);
@@ -29,13 +26,15 @@ export const floorFrag = /* glsl */`
 
     vec3 color = uBg;
     color = mix(color, uGrid, line * fade);
+
+    // Brouillard appliqué au sol (s'adapte à la couleur du monstre)
+    float fogFactor = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
+    color = mix(color, uFogColor, fogFactor);
+
     gl_FragColor = vec4(color, 1.0);
   }
 `;
 
-// ============================================================
-// CIEL
-// ============================================================
 export const skyVert = /* glsl */`
   varying vec3 vWorldPos;
   void main() {
