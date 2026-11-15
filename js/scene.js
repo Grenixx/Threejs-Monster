@@ -159,12 +159,10 @@ export function createScene(canvas) {
   let currentMonster = null;
   let currentDef = null;
 
-  // Lerp couleurs
   const targetColors = {
     grid: new THREE.Color(), bg: new THREE.Color(), skyTop: new THREE.Color(), skyBottom: new THREE.Color()
   };
 
-  // Animation de spawn (le monstre émerge du sol)
   let spawnAnim = null;
 
   function applyPalette(hue) {
@@ -190,27 +188,44 @@ export function createScene(canvas) {
     const size = bbox.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
     const scale = 2.4 / maxDim;
+
+    // On applique le scale global au groupe
     currentMonster.scale.setScalar(scale);
 
     const bbox2 = new THREE.Box3().setFromObject(currentMonster);
+    // On le place un peu plus haut (flottant)
     const finalY = -bbox2.min.y + 0.5;
 
-    // Le monstre démarre sous le sol et va émerger
-    currentMonster.position.y = finalY - 5;
     currentMonster.position.x = 0;
+    currentMonster.position.y = finalY;
     currentMonster.position.z = 0;
     currentMonster.quaternion.identity();
 
-    scene.add(currentMonster);
-    applyPalette(currentDef.baseHue);
-
-    // Init animation de spawn
+    // --- PRÉPARATION DE L'ANIMATION DE CROISSANCE ---
     spawnAnim = {
       startTime: null,
-      duration: 0.9,
-      startY: currentMonster.position.y,
-      targetY: finalY
+      duration: 0.8,
+      parts: []
     };
+
+    currentMonster.children.forEach((child, index) => {
+      // On sauvegarde la taille finale de chaque partie
+      const targetScale = child.scale.x;
+      // On réduit la taille à presque 0
+      child.scale.setScalar(0.001);
+
+      // Le corps (index 0) pousse immédiatement. Les autres parties ont un délai aléatoire.
+      const delay = index === 0 ? 0 : 0.05 + Math.random() * 0.35;
+
+      spawnAnim.parts.push({
+        mesh: child,
+        targetScale,
+        delay
+      });
+    });
+
+    scene.add(currentMonster);
+    applyPalette(currentDef.baseHue);
 
     return {
       name: currentDef.name,
@@ -237,19 +252,33 @@ export function createScene(canvas) {
     fillLight.color.lerp(targetColors.skyBottom, speed);
     scene.fog.color.lerp(targetColors.skyBottom, speed);
 
-    // --- Animation de spawn (le monstre monte du sol) ---
+    // --- ANIMATION DE CROISSANCE (L'effet "pousse") ---
     if (spawnAnim && currentMonster) {
       if (spawnAnim.startTime === null) spawnAnim.startTime = t;
 
       const elapsed = t - spawnAnim.startTime;
-      const progress = Math.min(1, elapsed / spawnAnim.duration);
-      // Ease-out cubic : rapide au début, ralentit à la fin
-      const ease = 1 - Math.pow(1 - progress, 3);
 
-      currentMonster.position.y = spawnAnim.startY + (spawnAnim.targetY - spawnAnim.startY) * ease;
+      spawnAnim.parts.forEach(p => {
+        const localElapsed = elapsed - p.delay;
 
-      if (progress >= 1) {
-        currentMonster.position.y = spawnAnim.targetY;
+        // Si le délai est passé, la partie commence à pousser
+        if (localElapsed > 0) {
+          const progress = Math.min(1, localElapsed / spawnAnim.duration);
+
+          // Ease-out cubic (rapide au début, ralentit à la fin)
+          const ease = 1 - Math.pow(1 - progress, 3);
+
+          // Petit overshoot (dépasse légèrement sa taille puis revient)
+          const overshoot = Math.sin(progress * Math.PI) * 0.15;
+
+          p.mesh.scale.setScalar(p.targetScale * (ease + overshoot));
+        }
+      });
+
+      // Fin de l'animation
+      if (elapsed > spawnAnim.duration + 0.6) {
+        // On s'assure que toutes les tailles sont parfaites
+        spawnAnim.parts.forEach(p => p.mesh.scale.setScalar(p.targetScale));
         spawnAnim = null;
       }
     }
