@@ -1380,6 +1380,97 @@ h3 { font-size: 14px; font-weight: 600; }
 }
 
 /* -------------------------------------------------------------
+   EXPEDITION HP BARS (Fallout Shelter style)
+   ------------------------------------------------------------- */
+.se-hp-bars,
+.exp-hp-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--line);
+}
+
+.hp-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hp-name {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  min-width: 60px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hp-bar-wrap {
+  flex: 1;
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.hp-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--mint-2), var(--mint));
+  transition: width 0.3s ease, background 0.3s ease;
+  box-shadow: 0 0 8px rgba(116, 245, 195, 0.4);
+}
+
+.hp-bar.dead {
+  background: linear-gradient(90deg, #ff4455, #ff7a8a) !important;
+  box-shadow: 0 0 8px rgba(255, 122, 138, 0.4);
+}
+
+.hp-value {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text);
+  min-width: 60px;
+  text-align: right;
+}
+
+.se-recall {
+  width: 100%;
+  margin-top: 8px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: all 0.18s;
+}
+.se-recall:hover {
+  border-color: var(--amber);
+  color: var(--amber);
+  background: rgba(255, 196, 107, 0.06);
+}
+
+.exp-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* -------------------------------------------------------------
    MARCHÉ
    ------------------------------------------------------------- */
 .market-head {

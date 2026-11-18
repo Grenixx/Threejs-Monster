@@ -237,6 +237,94 @@ export function resolveExpedition(monster, zone, seed) {
 }
 
 // -------------------------------------------------------------
+// EXPEDITION HP / DAMAGE (Fallout Shelter style)
+// -------------------------------------------------------------
+export function monsterMaxHp(monster) {
+  const stats = monsterStats(monster);
+  // Base HP from resistance + level bonus
+  const baseHp = 50 + stats.resistance * 8 + (monster.level || 1) * 10;
+  // Voracité gives small HP bonus
+  const vorBonus = 1 + (stats.voracite || 0) / 200;
+  return Math.round(baseHp * vorBonus);
+}
+
+export function monsterHp(monster) {
+  // Current HP stored on monster, or max if not set
+  return monster.currentHp ?? monsterMaxHp(monster);
+}
+
+export function setMonsterHp(monster, hp) {
+  const max = monsterMaxHp(monster);
+  monster.currentHp = Math.max(0, Math.min(max, Math.round(hp)));
+  return monster.currentHp;
+}
+
+export function healMonster(monster, amount) {
+  const max = monsterMaxHp(monster);
+  const current = monster.currentHp ?? max;
+  monster.currentHp = Math.min(max, current + Math.round(amount));
+  return monster.currentHp;
+}
+
+export function damageMonster(monster, amount) {
+  const current = monster.currentHp ?? monsterMaxHp(monster);
+  monster.currentHp = Math.max(0, current - Math.round(amount));
+  return monster.currentHp;
+}
+
+export function isMonsterDead(monster) {
+  return (monster.currentHp ?? monsterMaxHp(monster)) <= 0;
+}
+
+export function expeditionDanger(zone) {
+  // Base danger from zone, scaled by danger level
+  const dangerMap = {
+    'fosses': 0.5,
+    'sel': 1.0,
+    'verre': 1.8,
+    'nebuleuse': 2.5,
+    'ventre': 4.0
+  };
+  return dangerMap[zone.id] || 1.0;
+}
+
+export function expeditionDps(monster, zone) {
+  const stats = monsterStats(monster);
+  const danger = expeditionDanger(zone);
+  // Base DPS from zone danger
+  let dps = danger * 0.8;
+  // Resistance reduces damage significantly
+  const resReduction = 1 / (1 + stats.resistance / 50);
+  // Vitesse gives small dodge chance
+  const speedReduction = 1 / (1 + stats.vitesse / 100);
+  // Role modifiers
+  const role = roleOf(monster);
+  const roleMult = role.expedition; // harvester=1.25, raider=0.8, guardian=0.7, scout=1
+  dps *= resReduction * speedReduction * roleMult;
+  return Math.max(0.1, dps); // Minimum 0.1 DPS
+}
+
+export function calculateExpeditionHpAtTime(monster, zone, startedAt, now, maxDuration) {
+  const maxHp = monsterMaxHp(monster);
+  const dps = expeditionDps(monster, zone);
+  const elapsed = (now - startedAt) / 1000; // seconds
+  const progress = Math.min(1, elapsed / maxDuration);
+  // Damage accumulates over time
+  const totalDamage = dps * elapsed;
+  // Healing from voracité (slow regen)
+  const stats = monsterStats(monster);
+  const hps = (stats.voracite || 0) * 0.05; // HP per second
+  const totalHeal = hps * elapsed;
+  let hp = maxHp - totalDamage + totalHeal;
+  hp = Math.max(0, Math.min(maxHp, hp));
+  return { hp, maxHp, dps, hps, progress, dead: hp <= 0 };
+}
+
+export function calculateGroupExpeditionHpAtTime(members, zone, startedAt, now, maxDuration) {
+  return members.map(m => calculateExpeditionHpAtTime(m, zone, startedAt, now, maxDuration));
+}
+
+// -------------------------------------------------------------
 // GÉNÉRATION DE PARTIES
 // -------------------------------------------------------------
 export function rollRarity(zone, esoterisme, rng) {

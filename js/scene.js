@@ -163,40 +163,28 @@ export function createScene(canvas, options = {}) {
   scene.add(aura);
 
 
-
   // -----------------------------------------------------------
-  // OMBRE DE CONTACT (pas de socle)
+  // SOL (floor shader — pas d'ombres de contact)
   // -----------------------------------------------------------
-  const shadowMaterial = new THREE.ShaderMaterial({
-    uniforms: { uColor: { value: new THREE.Color(0x000000) }, uOpacity: { value: 0.45 } },
-    vertexShader: /* glsl */`
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */`
-      varying vec2 vUv;
-      uniform vec3 uColor;
-      uniform float uOpacity;
-      void main() {
-        float d = length(vUv - 0.5) * 2.0;
-        float a = smoothstep(1.0, 0.1, d) * uOpacity;
-        gl_FragColor = vec4(uColor, a);
-      }
-    `,
-    transparent: true,
-    depthWrite: false
+  const floorUniforms = {
+    uGrid: { value: new THREE.Color(0x1a182e) },
+    uBg: { value: new THREE.Color(0x05040c) },
+    uFogColor: { value: new THREE.Color(0x05040c) },
+    uTime: { value: 0 },
+    uFogDensity: { value: 0.035 }
+  };
+  const floorMat = new THREE.ShaderMaterial({
+    vertexShader: floorVert,
+    fragmentShader: floorFrag,
+    uniforms: floorUniforms,
+    depthWrite: true
   });
-
-  function makeContactShadow(size = 1.6) {
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), shadowMaterial.clone());
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.y = 0.015;
-    mesh.renderOrder = 2;
-    return mesh;
-  }
+  const floorGeo = new THREE.PlaneGeometry(200, 200);
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0;
+  floor.renderOrder = 1;
+  scene.add(floor);
 
   // -----------------------------------------------------------
   // PARTICULES
@@ -562,7 +550,6 @@ export function createScene(canvas, options = {}) {
       actor.rotation.y = (index - (list.length - 1) / 2) * 0.12;
 
 
-
       const role = ROLES[monster.role] || ROLES.harvester;
       const labelEl = createActorLabel(monster, role);
 
@@ -604,10 +591,16 @@ export function createScene(canvas, options = {}) {
     clearExpedition();
 
     if (currentGroup) {
-      scene.remove(currentGroup);
-      disposeMonsterGroup(currentGroup);
+      // Defer disposal to next frame to avoid freeze
+      const oldGroup = currentGroup;
+      const oldMarkers = markerGroup;
       currentGroup = null;
       markerGroup = null;
+      requestAnimationFrame(() => {
+        scene.remove(oldGroup);
+        disposeMonsterGroup(oldGroup);
+        if (oldMarkers) oldMarkers.clear?.();
+      });
     }
 
     currentMonster = monster;
@@ -630,7 +623,6 @@ export function createScene(canvas, options = {}) {
       camera.position.set(0.85, 1.95, 5.7);
       controls.update();
     }
-
 
 
     markerGroup = createMarkerSet(anchors, groupScale);
@@ -855,6 +847,9 @@ export function createScene(canvas, options = {}) {
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     frameCamera(width / height);
+
+    // Update floor fog density based on camera distance
+    floorUniforms.uFogDensity.value = 0.035;
   }
 
   let userMovedCamera = false;
@@ -904,11 +899,20 @@ export function createScene(canvas, options = {}) {
     }
   }
 
+  function updateFloorPalette(t) {
+    // Lerp floor colors to match target palette
+    const speed = 0.045;
+    floorUniforms.uBg.value.lerp(targetColors.bg, speed);
+    floorUniforms.uGrid.value.lerp(targetColors.grid, speed);
+    floorUniforms.uFogColor.value.lerp(targetColors.skyBottom, speed);
+  }
+
   function update(t) {
     const dt = Math.min(0.05, clock.getDelta());
     elapsed = t;
 
     particleMat.uniforms.uTime.value = t;
+    floorUniforms.uTime.value = t;
 
     const speed = 0.045;
     skyUniforms.uColorTop.value.lerp(targetColors.skyTop, speed);
@@ -919,6 +923,8 @@ export function createScene(canvas, options = {}) {
     fillLight.color.lerp(targetColors.skyBottom, speed);
     scene.fog.color.lerp(targetColors.skyBottom, speed);
     aura.color.lerp(targetColors.grid, speed);
+
+    updateFloorPalette(t);
 
     if (expeditionMode && expeditionRoot) {
       const travel = 1.0;
@@ -1010,6 +1016,9 @@ export function createScene(canvas, options = {}) {
     getGroup: () => currentGroup,
     getMonster: () => currentMonster,
     getAnchors: () => anchors,
-    isExpeditionMode: () => expeditionMode
+    isExpeditionMode: () => expeditionMode,
+    getExpeditionActors: () => expeditionActors,
+    getExpeditionZone: () => currentZone,
+    floorUniforms
   };
 }

@@ -403,6 +403,27 @@ export class UI {
     const ready = remaining <= 0;
     const progress = pct(Date.now() - startedAt, endsAt - startedAt);
 
+    // HP bars for expedition members
+    let hpHtml = '';
+    if (!isRaid && expMembers.length) {
+      const zone = ZONE_BY_ID[exp.zoneId];
+      const hpData = this.game.getExpeditionHp ? this.game.getExpeditionHp(exp.id) : null;
+      if (hpData) {
+        hpHtml = `<div class="se-hp-bars">` + hpData.map((hd, i) => {
+          const member = expMembers[i];
+          const hpPct = hd.maxHp > 0 ? (hd.hp / hd.maxHp * 100) : 0;
+          const dead = hd.dead;
+          return `<div class="hp-bar-row">
+            <span class="hp-name">${esc(member?.name || 'Spécimen')}</span>
+            <div class="hp-bar-wrap">
+              <div class="hp-bar ${dead ? 'dead' : ''}" style="width:${hpPct}%"></div>
+            </div>
+            <span class="hp-value">${dead ? 'ÉPUISÉ' : `${Math.round(hd.hp)}/${hd.maxHp}`}</span>
+          </div>`;
+        }).join('') + `</div>`;
+      }
+    }
+
     el.classList.remove('hidden');
     el.classList.toggle('raid', isRaid);
     el.innerHTML = `
@@ -413,9 +434,10 @@ export class UI {
       <div class="se-zone">${esc(label)}</div>
       <div class="se-timer" data-ends="${endsAt}">${ready ? '00:00' : formatClock(remaining / 1000)}</div>
       <div class="se-bar"><i data-progress data-start="${startedAt}" data-end="${endsAt}" style="width:${progress}%"></i></div>
+      ${hpHtml}
       ${ready
         ? `<button class="se-claim" type="button" data-action="${isRaid ? 'claim-raid' : 'claim-expedition'}" data-id="${isRaid ? raid.id : exp.id}">${isRaid ? 'Résoudre la razzia' : 'Récolter'}</button>`
-        : ''}
+        : (!isRaid ? `<button class="se-recall" type="button" data-action="recall-expedition" data-id="${exp.id}">${icon('rotate-cw', 14)} Rappeler</button>` : '')}
     `;
   }
 
@@ -1151,6 +1173,27 @@ export class UI {
     const remaining = relativeTimeLeft(exp.endsAt);
     const ready = remaining <= 0;
     const progress = pct(Date.now() - exp.startedAt, exp.endsAt - exp.startedAt);
+    
+    // HP bars for expedition members
+    let hpHtml = '';
+    if (!ready && members.length) {
+      const hpData = this.game.getExpeditionHp ? this.game.getExpeditionHp(exp.id) : null;
+      if (hpData) {
+        hpHtml = `<div class="exp-hp-bars">` + hpData.map((hd, i) => {
+          const member = members[i];
+          const hpPct = hd.maxHp > 0 ? (hd.hp / hd.maxHp * 100) : 0;
+          const dead = hd.dead;
+          return `<div class="hp-bar-row">
+            <span class="hp-name">${esc(member?.name || 'Spécimen')}</span>
+            <div class="hp-bar-wrap">
+              <div class="hp-bar ${dead ? 'dead' : ''}" style="width:${hpPct}%"></div>
+            </div>
+            <span class="hp-value">${dead ? 'ÉPUISÉ' : `${Math.round(hd.hp)}/${hd.maxHp}`}</span>
+          </div>`;
+        }).join('') + `</div>`;
+      }
+    }
+    
     return `<div class="exp-live ${ready ? 'ready' : ''}">
       <div class="exp-top">
         <div>
@@ -1160,6 +1203,7 @@ export class UI {
         <div class="exp-time" data-ends="${exp.endsAt}">${ready ? '00:00' : formatClock(remaining / 1000)}</div>
       </div>
       <div class="exp-progress"><i data-progress data-start="${exp.startedAt}" data-end="${exp.endsAt}" style="width:${progress}%"></i></div>
+      ${hpHtml}
       <div class="chips" style="margin:7px 0 8px">
         ${members.map(m => {
           const role = ROLES[m.role] || ROLES.harvester;
@@ -1168,7 +1212,10 @@ export class UI {
       </div>
       ${ready
         ? `<button class="btn primary sm wide" type="button" data-action="claim-expedition" data-id="${exp.id}">Récolter</button>`
-        : `<span class="tiny dim">Retour dans ${formatDuration(Math.ceil(remaining / 1000))}</span>`}
+        : `<div class="exp-actions">
+            <span class="tiny dim">Retour dans ${formatDuration(Math.ceil(remaining / 1000))}</span>
+            <button class="btn sm ghost" type="button" data-action="recall-expedition" data-id="${exp.id}">${icon('rotate-cw', 12)} Rappeler</button>
+           </div>`}
     </div>`;
   }
 
@@ -1539,6 +1586,9 @@ export class UI {
       case 'claim-expedition':
         this.claimOne(el.dataset.id);
         break;
+      case 'recall-expedition':
+        this.recallOne(el.dataset.id);
+        break;
       case 'claim-all':
         this.claimAll();
         break;
@@ -1646,6 +1696,21 @@ export class UI {
   claimOne(id) {
     const result = this.game.claimExpedition(id);
     if (!result.ok) this.toast(result.reason, 'warn');
+  }
+
+  recallOne(id) {
+    const result = this.game.recallExpedition(id);
+    if (!result.ok) {
+      this.toast(result.reason, 'warn');
+    } else {
+      if (result.dead && result.dead.length > 0) {
+        this.toast(`${result.monsters.filter(m => result.dead.includes(m.uid)).map(m => m.name).join(', ')} revenu(s) épuisé(s) !`, 'warn');
+      } else {
+        this.toast(`Expédition rappelée (${Math.round(result.progress * 100)}%) · +${formatNumber(result.biomass)} biomasse`, 'info');
+      }
+      // Show reward modal for recall
+      this.openRecallRewardModal(result);
+    }
   }
 
   claimAll() {
@@ -2389,6 +2454,54 @@ export class UI {
       </div>
       <div class="modal-actions">
         <button class="btn primary" type="button" data-modal-action="close">Ranger le butin</button>
+      </div>
+    `);
+  }
+
+  openRecallRewardModal(result) {
+    const { monsters, zone, progress, outcome, parts, memberLevels, dead, converted } = result;
+    const partsHtml = (parts || []).map(part => `
+      <div class="attach-row">
+        <span class="part-tile rar-${part.rarity}">${icon(PART_TYPES[part.type].icon, 16)}</span>
+        <span class="meta"><b>${esc(part.name)}</b><span>${RARITIES[part.rarity].label} · ${statText(part)}</span></span>
+      </div>
+    `).join('');
+
+    const deadNames = dead ? monsters.filter(m => dead.includes(m.uid)).map(m => m.name).join(', ') : '';
+    const isPartial = progress < 1;
+    const deadCount = dead?.length || 0;
+
+    this.openModal(`
+      ${this.modalHead(
+        isPartial ? 'Expédition rappelée' : 'Expédition terminée',
+        zone.name,
+        `${monsters.map(m => m.name).join(', ')} ${isPartial ? `rappelé(s) à ${Math.round(progress * 100)}%` : 'rentre au laboratoire'}.${deadCount ? ` ${deadCount} épuisé(s) : ${deadNames}` : ''}`
+      )}
+      <div class="modal-body">
+        <div class="reward-burst">
+          <div class="reward-big">${icon('biomass', 18)}<b>+${formatNumber(outcome.biomass)}</b><span>Biomasse</span></div>
+          <div class="reward-big">${icon('shards', 18)}<b>+${formatNumber(outcome.shards)}</b><span>Éclats</span></div>
+          <div class="reward-big">${icon('bolt', 18)}<b>+${formatNumber(outcome.xpEach)}</b><span>XP / spécimen</span></div>
+        </div>
+        <div class="chips" style="margin-bottom:8px">
+          ${monsters.map(m => {
+            const role = ROLES[m.role] || ROLES.harvester;
+            const isDead = dead?.includes(m.uid);
+            return `<span class="chip ${isDead ? 'dead' : ''}" style="color:${role.color}">${icon(role.icon, 10)} ${esc(m.name)} · ${role.label}${isDead ? ' ⚰' : ''}</span>`;
+          }).join('')}
+        </div>
+        ${deadCount > 0
+          ? `<div class="notice" style="margin-bottom:8px">${icon('skull', 15)}<span><b>${deadCount} spécimen(s) épuisé(s)</b> · ${deadNames} · Fatigue prolongée (1h).</span></div>`
+          : ''}
+        ${memberLevels && memberLevels.length > 0
+          ? `<div class="notice mint">${icon('bolt', 15)}<span><b>${memberLevels.length} montée(s) de niveau</b> · ${memberLevels.map(m => `${m.name} → Nv.${m.level}`).join(' · ')}</span></div>`
+          : ''}
+        ${converted ? `<div class="notice" style="margin-top:8px">${icon('info', 15)}<span>Inventaire plein : ${formatNumber(converted)} biomasse supplémentaires.</span></div>` : ''}
+        <div class="loot-title"><span class="eyebrow">Parties trouvées</span><span class="line"></span><span class="tiny dim mono">${(parts || []).length}</span></div>
+        <div class="part-list">${partsHtml || '<div class="empty-state">Rien cette fois-ci.</div>'}</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" type="button" data-modal-action="close">Ranger le rapport</button>
       </div>
     `);
   }

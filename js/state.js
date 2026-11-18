@@ -10,7 +10,8 @@ import {
   uid, generatePart, generateMonsterName, createMonster, createStarterParts, monsterStats, monsterPower,
   capacityOf, canAttach, autoPlacements, applyXp, nextLevelXp,
   expeditionRates, groupExpeditionRates, resolveGroupExpedition,
-  fairPrice, monsterValue, formatNumber, formatDuration, zonePower, roleOf
+  fairPrice, monsterValue, formatNumber, formatDuration, zonePower, roleOf,
+  monsterMaxHp, expeditionDps, calculateExpeditionHpAtTime, calculateGroupExpeditionHpAtTime, isMonsterDead
 } from './economy.js';
 import {
   npcLabs, attackerSnapshot, resolveRaid, raidDuration, labDefense, defenseUpgradeBonus
@@ -688,6 +689,12 @@ export class Game {
 
     const rates = groupExpeditionRates(members, zone);
     const now = Date.now();
+    
+    // Initialize HP for each member
+    for (const member of members) {
+      member.currentHp = monsterMaxHp(member);
+    }
+
     const exp = {
       id: uid('exp'),
       monsterId: members[0].uid,
@@ -697,7 +704,9 @@ export class Game {
       endsAt: now + rates.duration * 1000,
       duration: rates.duration,
       seed: Math.floor(Math.random() * 2 ** 31),
-      notified: false
+      notified: false,
+      // Track HP at start for recall calculations
+      startHp: members.map(m => ({ uid: m.uid, hp: m.currentHp, maxHp: monsterMaxHp(m) }))
     };
     this.state.expeditions.push(exp);
     const names = members.map(m => m.name).join(', ');
@@ -783,6 +792,120 @@ export class Game {
       if (result.ok) results.push(result);
     }
     return results;
+  }
+
+  /** Rappelle une expédition avant la fin. Les monstres reviennent avec leur HP actuel.
+   * Butin proportionnel au temps passé, pas de pénalité XP. */
+  recallExpedition(expeditionId) {
+    const index = this.state.expeditions.findIndex(e => e.id === expeditionId);
+    if (index === -1) return { ok: false, reason: 'Expédition introuvable.' };
+    const exp = this.state.expeditions[index];
+    const now = Date.now();
+    if (now >= exp.endsAt) return { ok: false, reason: 'Expédition déjà terminée.' };
+
+    const members = this.expeditionMembers(exp);
+    const zone = ZONE_BY_ID[exp.zoneId];
+    if (!members.length || !zone) {
+      this.state.expeditions.splice(index, 1);
+      this.commit();
+      return { ok: false, reason: 'Expédition invalide.' };
+    }
+
+    // Calculate current HP for each member
+    const hpResults = calculateGroupExpeditionHpAtTime(members, zone, exp.startedAt, now, exp.duration);
+    
+    // Check for dead monsters
+    const deadMembers = [];
+    for (let i = 0; i < members.length; i++) {
+      const hpData = hpResults[i];
+      members[i].currentHp = hpData.hp;
+      if (hpData.dead) {
+        deadMembers.push(members[i]);
+      }
+    }
+
+    // Remove expedition
+    this.state.expeditions.splice(index, 1);
+
+    // Calculate partial rewards based on time spent
+    const progress = Math.min(1, (now - exp.startedAt) / (exp.endsAt - exp.startedAt));
+    const rates = groupExpeditionRates(members, zone);
+    const outcome = resolveGroupExpedition(members, zone, exp.seed);
+    
+    // Scale rewards by progress (minimum 10%)
+    const rewardMult = Math.max(0.1, progress);
+    const biomass = Math.round(outcome.biomass * rewardMult);
+    const shards = Math.round(outcome.shards * rewardMult);
+    const xpEach = Math.round(outcome.xpEach * rewardMult);
+    const parts = outcome.parts.slice(0, Math.max(1, Math.ceil(outcome.parts.length * rewardMult)));
+
+    this.state.resources.biomass += biomass;
+    this.state.resources.shards += shards;
+    this.state.records.biomassEarned = (this.state.records.biomassEarned || 0) + biomass;
+    this.state.records.shardsEarned = (this.state.records.shardsEarned || 0) + shards;
+    this.state.records.expeditionsDone = (this.state.records.expeditionsDone || 0) + 1;
+    this.state.records.zoneRuns[zone.id] = (this.state.records.zoneRuns[zone.id] || 0) + 1;
+    if (zone.id === 'verre') this.state.records.verreRuns = (this.state.records.verreRuns || 0) + 1;
+
+    const converted = this.addParts(parts);
+    const memberLevels = [];
+    for (const member of members) {
+      const gained = applyXp(member, xpEach);
+      if (gained > 0) {
+        memberLevels.push({ uid: member.uid, name: member.name, level: member.level });
+        this.emitEvent('toast', { text: `${member.name} · niveau ${member.level} !`, kind: 'level' });
+      }
+    }
+
+    // Handle dead monsters - they're fatigued for longer
+    for (const dead of deadMembers) {
+      dead.fatigueUntil = Math.max(dead.fatigueUntil || 0, Date.now() + 3600 * 1000); // 1 hour fatigue
+      logEntry(this.state, `${dead.name} est revenu épuisé de ${zone.name} (HP: 0).`, 'warn');
+      this.emitEvent('toast', { text: `${dead.name} est revenu épuisé !`, kind: 'warn' });
+    }
+
+    const names = members.map(m => m.name).join(', ');
+    logEntry(
+      this.state,
+      `${names} rappelé de ${zone.name} (${Math.round(progress * 100)}%) : +${formatNumber(biomass)} biomasse, ${parts.length} partie(s).`,
+      deadMembers.length ? 'warn' : 'loot'
+    );
+
+    this.emitEvent('recall', {
+      monsters: members,
+      zone,
+      progress,
+      outcome: { biomass, shards, xpEach, parts },
+      converted,
+      memberLevels,
+      dead: deadMembers.map(m => m.uid)
+    });
+
+    this.commit({ reason: 'recall' });
+    return {
+      ok: true,
+      monsters: members,
+      zone,
+      progress,
+      biomass,
+      shards,
+      xpEach,
+      parts,
+      converted,
+      memberLevels,
+      dead: deadMembers.map(m => m.uid)
+    };
+  }
+
+  /** Récupère l'HP actuel de tous les monstres en expédition (pour l'UI temps réel) */
+  getExpeditionHp(expeditionId) {
+    const exp = this.state.expeditions.find(e => e.id === expeditionId);
+    if (!exp) return null;
+    const members = this.expeditionMembers(exp);
+    const zone = ZONE_BY_ID[exp.zoneId];
+    if (!zone) return null;
+    const now = Date.now();
+    return calculateGroupExpeditionHpAtTime(members, zone, exp.startedAt, now, exp.duration);
   }
 
   // ----- razzias (mode local) -----
@@ -1117,7 +1240,22 @@ export class Game {
     this._lastTick = now;
 
     let changed = false;
+    
+    // Check expeditions for dead monsters (auto-recall)
     for (const exp of this.state.expeditions) {
+      const members = this.expeditionMembers(exp);
+      const zone = ZONE_BY_ID[exp.zoneId];
+      if (members.length && zone) {
+        const hpResults = calculateGroupExpeditionHpAtTime(members, zone, exp.startedAt, now, exp.duration);
+        const deadCount = hpResults.filter(h => h.dead).length;
+        if (deadCount > 0) {
+          // Auto-recall expedition with dead monsters
+          this.recallExpedition(exp.id);
+          changed = true;
+          continue; // Skip the rest for this expedition since it was removed
+        }
+      }
+
       if (!exp.notified && now >= exp.endsAt) {
         exp.notified = true;
         const members = this.expeditionMembers(exp);
