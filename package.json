@@ -1,0 +1,16 @@
+{
+  "name": "chimere-lab",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "CHIMÈRE — laboratoire de monstres idle multijoueur (Three.js + Node)",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "serve": "python -m http.server 8000",
+    "test": "node tests/engine.test.js",
+    "test:server": "node tests/server.test.mjs",
+    "test:all": "node tests/engine.test.js && node tests/server.test.mjs",
+    "sim": "node tools/simulate.mjs"
+  }
+}

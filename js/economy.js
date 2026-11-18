@@ -1,0 +1,471 @@
+// =============================================================
+// CHIMÈRE — Moteur de jeu pur (aucun DOM, aucun Three.js)
+// Utilisable côté client et côté serveur.
+// =============================================================
+
+import { mulberry32 } from './rng.js';
+import {
+  STAT_KEYS, PART_TYPES, PART_TYPE_KEYS, RARITIES, RARITY_KEYS,
+  BODIES, BALANCE, ROLES, ROLE_KEYS
+} from './data.js';
+
+// -------------------------------------------------------------
+// UTILITAIRES
+// -------------------------------------------------------------
+export function uid(prefix = 'x') {
+  return `${prefix}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-3)}`;
+}
+
+export function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+export function socketY(index, count) {
+  if (count <= 1) return 0;
+  return 1 - (index / (count - 1)) * 2;
+}
+
+export function partTotalStats(part) {
+  return STAT_KEYS.reduce((sum, key) => sum + (part.stats?.[key] || 0), 0);
+}
+
+export function monsterStats(monster) {
+  const body = BODIES[monster.bodyId] || BODIES.larve;
+  const total = {};
+  for (const key of STAT_KEYS) total[key] = body.stats?.[key] || 0;
+
+  for (const item of monster.attachments || []) {
+    const stats = item.part?.stats || {};
+    for (const key of STAT_KEYS) total[key] += stats[key] || 0;
+  }
+
+  const levelMult = 1 + BALANCE.levelStatBonus * Math.max(0, (monster.level || 1) - 1);
+  for (const key of STAT_KEYS) {
+    total[key] = Math.max(0, Math.round(total[key] * levelMult));
+  }
+  return total;
+}
+
+export function monsterPower(monster) {
+  const stats = monsterStats(monster);
+  return STAT_KEYS.reduce((sum, key) => sum + stats[key], 0);
+}
+
+export function powerOfStats(stats) {
+  return STAT_KEYS.reduce((sum, key) => sum + (stats[key] || 0), 0);
+}
+
+export function zonePower(stats, zone) {
+  let total = 0;
+  for (const key of STAT_KEYS) {
+    total += (stats[key] || 0) * (zone.weights?.[key] ?? 1);
+  }
+  return Math.round(total);
+}
+
+export function capacityOf(monster) {
+  const body = BODIES[monster.bodyId] || BODIES.larve;
+  const level = monster.level || 1;
+  return Math.min(body.sockets, 4 + level);
+}
+
+export function socketCount(bodyId) {
+  return (BODIES[bodyId] || BODIES.larve).sockets;
+}
+
+export function nextLevelXp(level) {
+  return Math.round(BALANCE.xpCurveBase * Math.pow(level, BALANCE.xpCurveExp));
+}
+
+/** Ajoute de l'XP et retourne le nombre de niveaux gagnés. */
+export function applyXp(monster, amount) {
+  monster.xp = (monster.xp || 0) + Math.max(0, Math.round(amount));
+  let gained = 0;
+  while (monster.xp >= nextLevelXp(monster.level || 1)) {
+    monster.xp -= nextLevelXp(monster.level || 1);
+    monster.level = (monster.level || 1) + 1;
+    gained++;
+    if (monster.level >= 60) break;
+  }
+  return gained;
+}
+
+export function roleOf(monster) {
+  return ROLES[monster?.role] || ROLES.harvester;
+}
+
+export function rollLoot(zone, stats, rng, origin = 'expedition', lootBonus = 1) {
+  const perception = stats.perception || 0;
+  let count = 1;
+  if (rng() < clamp((0.2 + perception / 320) * lootBonus, 0, 0.9)) count++;
+  if (perception >= 120 && rng() < clamp((perception / 520) * lootBonus, 0, 0.75)) count++;
+  count = Math.min(count, zone.lootMax || 2);
+  count = Math.min(count, 4);
+
+  const parts = [];
+  for (let i = 0; i < count; i++) {
+    parts.push(lootPart(zone, stats, rng, origin));
+  }
+  return parts;
+}
+
+// -------------------------------------------------------------
+// EXPÉDITIONS
+// -------------------------------------------------------------
+export function durationFor(monster, zone) {
+  const stats = monsterStats(monster);
+  const role = roleOf(monster);
+  const factor = Math.max(
+    BALANCE.minDurationFactor,
+    1 / (1 + stats.vitesse / BALANCE.durationSpeedDivisor)
+  );
+  return Math.max(10, Math.round(zone.duration * factor * role.speed));
+}
+
+export function expeditionRates(monster, zone) {
+  const stats = monsterStats(monster);
+  const role = roleOf(monster);
+  const power = zonePower(stats, zone);
+  const ratio = clamp(power / Math.max(1, zone.req), 0.35, 3);
+  const vorBonus = 1 + stats.voracite / 120;
+  const levelBonus = 1 + BALANCE.levelStatBonus * Math.max(0, (monster.level || 1) - 1);
+
+  return {
+    stats,
+    power,
+    ratio,
+    role: role.label,
+    lootBonus: role.loot,
+    biomass: Math.round(zone.biomass * ratio * vorBonus * levelBonus * role.expedition),
+    shards: Math.round(zone.biomass * 0.11 * ratio * (1 + stats.esoterisme / 250) * role.expedition),
+    duration: durationFor(monster, zone),
+    xp: zone.xp
+  };
+}
+
+/**
+ * Agrège une escouade de 1 à 3 monstres. Le rendement monte avec la somme
+ * des stats et un bonus d'escouade ; la durée est celle du plus lent.
+ */
+export function groupExpeditionRates(monsters, zone) {
+  const members = (monsters || []).filter(Boolean);
+  if (!members.length) return null;
+
+  const stats = {};
+  for (const key of STAT_KEYS) stats[key] = 0;
+  for (const monster of members) {
+    const ms = monsterStats(monster);
+    for (const key of STAT_KEYS) stats[key] += ms[key] || 0;
+  }
+
+  const level = Math.max(...members.map(m => m.level || 1));
+  const roleExpedition = members.reduce((sum, m) => sum + roleOf(m).expedition, 0) / members.length;
+  const roleLoot = members.reduce((sum, m) => sum + roleOf(m).loot, 0) / members.length;
+  const squadBonus = 1 + 0.15 * (members.length - 1);
+  const power = Math.round(zonePower(stats, zone) * squadBonus);
+  const ratio = clamp(power / Math.max(1, zone.req), 0.35, 3);
+  const vorBonus = 1 + (stats.voracite || 0) / 120;
+  const levelBonus = 1 + BALANCE.levelStatBonus * Math.max(0, level - 1);
+  const duration = Math.max(...members.map(m => durationFor(m, zone)));
+
+  return {
+    stats,
+    power,
+    ratio,
+    roleExpedition,
+    roleLoot,
+    squadBonus,
+    level,
+    members,
+    duration,
+    biomass: Math.round(zone.biomass * ratio * vorBonus * levelBonus * roleExpedition * squadBonus),
+    shards: Math.round(zone.biomass * 0.11 * ratio * (1 + (stats.esoterisme || 0) / 250) * roleExpedition * squadBonus),
+    xp: zone.xp
+  };
+}
+
+/**
+ * Résout une expédition de groupe de façon déterministe.
+ * @returns {{biomass:number, shards:number, xp:number, xpEach:number, parts:Array, power:number, ratio:number, duration:number}}
+ */
+export function resolveGroupExpedition(monsters, zone, seed) {
+  const members = (monsters || []).filter(Boolean);
+  const rng = mulberry32((seed >>> 0) || 1);
+  const rates = groupExpeditionRates(members, zone);
+  if (!rates) {
+    return { biomass: 0, shards: 0, xp: 0, xpEach: 0, parts: [], power: 0, ratio: 0, duration: 0 };
+  }
+
+  const swing = 0.9 + rng() * 0.2;
+  const biomass = Math.max(1, Math.round(rates.biomass * swing));
+  const shards = Math.max(1, Math.round(rates.shards * (0.9 + rng() * 0.2)));
+  const parts = rollLoot(zone, rates.stats, rng, `expedition:${zone.id}`, rates.roleLoot);
+  const xpEach = Math.round(zone.xp * (1 + 0.25 * (members.length - 1)));
+
+  return {
+    biomass,
+    shards,
+    xp: xpEach * members.length,
+    xpEach,
+    parts,
+    power: rates.power,
+    ratio: rates.ratio,
+    duration: rates.duration
+  };
+}
+
+/**
+ * Résout une expédition de façon déterministe à partir de la graine.
+ * @returns {{biomass:number, shards:number, xp:number, parts:Array, power:number, ratio:number}}
+ */
+export function resolveExpedition(monster, zone, seed) {
+  const rng = mulberry32((seed >>> 0) || 1);
+  const rates = expeditionRates(monster, zone);
+  const swing = 0.9 + rng() * 0.2;
+  const biomass = Math.max(1, Math.round(rates.biomass * swing));
+  const shards = Math.max(1, Math.round(rates.shards * (0.9 + rng() * 0.2)));
+  const parts = rollLoot(zone, rates.stats, rng, `expedition:${zone.id}`, rates.lootBonus);
+
+  return {
+    biomass,
+    shards,
+    xp: rates.xp,
+    parts,
+    power: rates.power,
+    ratio: rates.ratio
+  };
+}
+
+// -------------------------------------------------------------
+// GÉNÉRATION DE PARTIES
+// -------------------------------------------------------------
+export function rollRarity(zone, esoterisme, rng) {
+  const weights = { ...zone.rarityWeights };
+  const eso = Math.max(0, esoterisme || 0);
+  weights.rare *= 1 + eso / 220;
+  weights.epic *= 1 + eso / 130;
+  weights.mythic *= 1 + eso / 80;
+
+  const entries = RARITY_KEYS
+    .map(key => [key, Math.max(0, weights[key] || 0)])
+    .filter(([, w]) => w > 0);
+  const total = entries.reduce((sum, [, w]) => sum + w, 0);
+  let roll = rng() * total;
+  for (const [key, w] of entries) {
+    roll -= w;
+    if (roll <= 0) return key;
+  }
+  return entries[entries.length - 1]?.[0] || 'common';
+}
+
+export function partName(type, rarity, rng) {
+  const def = PART_TYPES[type];
+  const rarityDef = RARITIES[rarity];
+  const suffixes = rarityDef.suffixes;
+  const suffix = suffixes[Math.floor(rng() * suffixes.length)];
+  return `${def.singular} ${suffix}`;
+}
+
+export function generatePart(type, rarity = 'common', seed = Math.floor(Math.random() * 2 ** 31), origin = 'drop') {
+  const def = PART_TYPES[type];
+  if (!def) throw new Error(`Type de partie inconnu : ${type}`);
+  const rarityDef = RARITIES[rarity] || RARITIES.common;
+  const rng = mulberry32((seed ^ Math.imul(type.length + 31, 2654435761)) >>> 0);
+
+  const stats = {};
+  for (const [key, base] of Object.entries(def.stats)) {
+    const variance = 0.88 + rng() * 0.24;
+    stats[key] = Math.max(1, Math.round(base * rarityDef.mult * variance));
+  }
+
+  return {
+    uid: uid('part'),
+    type,
+    rarity,
+    seed,
+    stats,
+    name: partName(type, rarity, rng),
+    origin,
+    createdAt: Date.now()
+  };
+}
+
+export function lootPart(zone, stats, rng, origin = 'expedition') {
+  const type = PART_TYPE_KEYS[Math.floor(rng() * PART_TYPE_KEYS.length)];
+  const rarity = rollRarity(zone, stats.esoterisme || 0, rng);
+  return generatePart(type, rarity, Math.floor(rng() * 2 ** 31), origin);
+}
+
+// -------------------------------------------------------------
+// ASSEMBLAGE
+// -------------------------------------------------------------
+export function usedSockets(monster) {
+  return new Set((monster.attachments || []).map(a => a.socket));
+}
+
+export function attachmentsOfType(monster, type) {
+  return (monster.attachments || []).filter(a => a.part.type === type).length;
+}
+
+export function canAttach(monster, part, socket) {
+  const def = PART_TYPES[part.type];
+  if (!def) return { ok: false, reason: 'Partie inconnue.' };
+  const body = BODIES[monster.bodyId] || BODIES.larve;
+
+  if (socket < 0 || socket >= body.sockets) {
+    return { ok: false, reason: 'Socket invalide.' };
+  }
+  if ((monster.attachments || []).length >= capacityOf(monster)) {
+    return { ok: false, reason: 'Capacité atteinte. Fais monter le monstre de niveau.' };
+  }
+  if (usedSockets(monster).has(socket)) {
+    return { ok: false, reason: 'Ce socket est occupé.' };
+  }
+  const y = socketY(socket, body.sockets);
+  if (y < def.rule.yMin || y > def.rule.yMax) {
+    return { ok: false, reason: `${def.label} ne peuvent pas être greffés ici.` };
+  }
+  if (attachmentsOfType(monster, part.type) >= def.rule.max) {
+    return { ok: false, reason: `Maximum ${def.rule.max} ${def.label.toLowerCase()} par monstre.` };
+  }
+  return { ok: true };
+}
+
+export function validSocketsFor(monster, part) {
+  const body = BODIES[monster.bodyId] || BODIES.larve;
+  const used = usedSockets(monster);
+  const out = [];
+  for (let i = 0; i < body.sockets; i++) {
+    if (used.has(i)) continue;
+    if (canAttach(monster, part, i).ok) out.push(i);
+  }
+  return out;
+}
+
+/**
+ * Remplissage automatique : choisit les meilleures parties de l'inventaire
+ * et les place sur les sockets compatibles.
+ */
+export function autoPlacements(monster, inventory) {
+  const placements = [];
+  let current = {
+    ...monster,
+    attachments: [...(monster.attachments || [])]
+  };
+
+  const pool = [...inventory].sort((a, b) => partTotalStats(b) - partTotalStats(a));
+  for (const part of pool) {
+    if (current.attachments.length >= capacityOf(current)) break;
+    const valid = validSocketsFor(current, part);
+    if (!valid.length) continue;
+
+    const def = PART_TYPES[part.type];
+    // Les yeux/cornes vont en haut, les tentacules en bas.
+    const mid = (def.rule.yMin + def.rule.yMax) / 2;
+    valid.sort((a, b) => {
+      const ya = socketY(a, BODIES[current.bodyId].sockets);
+      const yb = socketY(b, BODIES[current.bodyId].sockets);
+      return Math.abs(ya - mid) - Math.abs(yb - mid);
+    });
+    const socket = valid[0];
+    placements.push({ part, socket });
+    current.attachments.push({ part, socket });
+  }
+  return placements;
+}
+
+// -------------------------------------------------------------
+// VALEUR MARCHANDE
+// -------------------------------------------------------------
+export function fairPrice(part) {
+  const rarity = RARITIES[part.rarity] || RARITIES.common;
+  const base = 30 + partTotalStats(part) * 5;
+  return Math.max(25, Math.round(base * rarity.priceMult));
+}
+
+export function monsterValue(monster) {
+  const base = 120 + monsterPower(monster) * 6;
+  const parts = (monster.attachments || []).reduce((sum, a) => sum + fairPrice(a.part), 0);
+  return Math.round(base + parts * 0.65);
+}
+
+export function priceRange(part) {
+  const fair = fairPrice(part);
+  return {
+    fair,
+    min: Math.max(10, Math.round(fair * 0.55)),
+    max: Math.round(fair * 2.4)
+  };
+}
+
+// -------------------------------------------------------------
+// NOMS
+// -------------------------------------------------------------
+const NAME_S1 = ['Azh', 'Vor', 'Kal', 'Nyx', 'Zul', 'Mor', 'Kar', 'Gha', 'Xar', 'Tho', 'Ulg', 'Vex', 'Ith', 'Oph', 'Dra', 'Syl', 'Ur', 'Mog', 'Zer', 'Kro'];
+const NAME_S2 = ['', '', 'a', 'o', 'u', 'e', 'ka', 'zo', 'ra', 'thi', 'ne', 'sa', 'lu', 'mi'];
+const NAME_S3 = ['k', 'th', 'n', 'z', 'x', 'gul', 'tor', 'zar', 'oth', 'iss', 'ak', 'or', 'an', 'ys', 'eth', 'mog', 'ul', 'rak', 'ith'];
+
+export function generateMonsterName(rng = Math.random) {
+  const a = NAME_S1[Math.floor(rng() * NAME_S1.length)];
+  const b = NAME_S2[Math.floor(rng() * NAME_S2.length)];
+  const c = NAME_S3[Math.floor(rng() * NAME_S3.length)];
+  return `${a}${b}${c}`;
+}
+
+// -------------------------------------------------------------
+// CORPS / MONSTRES
+// -------------------------------------------------------------
+export function createMonster({ bodyId = 'larve', name, attachments = [], level = 1, xp = 0, role = 'harvester', hue }) {
+  const body = BODIES[bodyId] || BODIES.larve;
+  return {
+    uid: uid('mon'),
+    name: name || generateMonsterName(),
+    bodyId,
+    level,
+    xp,
+    role: ROLE_KEYS.includes(role) ? role : 'harvester',
+    hue: typeof hue === 'number' ? ((hue % 1) + 1) % 1 : Math.random(),
+    attachments,
+    createdAt: Date.now()
+  };
+}
+
+export function createStarterParts() {
+  const eye = generatePart('eye', 'common', 101);
+  const claw = generatePart('claw', 'common', 202);
+  const tentacle = generatePart('tentacle', 'common', 303);
+  const crystal = generatePart('crystal', 'rare', 404);
+  const ear = generatePart('ear', 'common', 505);
+  return { eye, claw, tentacle, crystal, ear };
+}
+
+// -------------------------------------------------------------
+// FORMATAGE
+// -------------------------------------------------------------
+export function formatNumber(n) {
+  if (n === undefined || n === null || Number.isNaN(n)) return '0';
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return `${(n / 1e9).toFixed(2).replace(/\.00$/, '')} Md`;
+  if (abs >= 1e6) return `${(n / 1e6).toFixed(2).replace(/\.00$/, '')} M`;
+  if (abs >= 1e4) return `${(n / 1e3).toFixed(1).replace(/\.0$/, '')} k`;
+  return Math.round(n).toLocaleString('fr-FR');
+}
+
+export function formatDuration(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+  if (m > 0) return `${m}m ${String(sec).padStart(2, '0')}s`;
+  return `${sec}s`;
+}
+
+export function formatClock(seconds) {
+  const s = Math.max(0, Math.ceil(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}

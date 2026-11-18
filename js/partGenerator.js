@@ -187,11 +187,11 @@ const TYPES = {
 
   eye: {
     generate: (rng) => ({
-      size: 0.15 + rng() * 0.1,
+      size: 0.12 + rng() * 0.07,
       irisHue: rng(),
       pupilType: Math.floor(rng() * 4),
       hasStalk: rng() > 0.4,
-      stalkHeight: 0.15 + rng() * 0.25
+      stalkHeight: 0.1 + rng() * 0.16
     }),
     build: (p, seed) => {
       const rng = mulberry32(seed);

@@ -2,9 +2,15 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Monster Builder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#07060d" />
+  <meta name="description" content="CHIMÈRE — récolte des parties de monstres, assemble ta chimère et envoie-la explorer un monde vivant." />
+  <title>CHIMÈRE — Laboratoire de monstres</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2374f5c3' d='M12 2l9 10-9 10L3 12z'/%3E%3C/svg%3E" />
   <script type="importmap">
   {
     "imports": {
@@ -16,12 +22,89 @@
 </head>
 <body>
   <canvas id="threeCanvas"></canvas>
-  <div id="info">
-    <div id="monsterName">—</div>
-    <div id="monsterSeed">seed : —</div>
-    <div id="monsterParts">— parties</div>
+  <div id="vignette" aria-hidden="true"></div>
+
+  <div id="app">
+    <header id="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">CHIMÈRE</span>
+          <span class="brand-sub">LABORATOIRE</span>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <div class="res-pill" title="Biomasse — sert à créer et débloquer des corps">
+          <span class="res-ico" data-icon="biomass"></span>
+          <span class="res-val" id="resBiomass">0</span>
+        </div>
+        <div class="res-pill" title="Éclats — monnaie du marché">
+          <span class="res-ico" data-icon="shards"></span>
+          <span class="res-val" id="resShards">0</span>
+        </div>
+        <button id="syncBadge" class="sync" type="button" title="État de la connexion">
+          <span class="sync-dot"></span>
+          <span id="syncLabel">Local</span>
+        </button>
+        <button id="helpBtn" class="icon-btn" type="button" aria-label="Aide et réglages">
+          <span data-icon="help"></span>
+        </button>
+      </div>
+    </header>
+
+    <section id="stage" aria-label="Spécimen en cours">
+      <div id="stageTop">
+        <div class="stage-kicker">
+          <span id="stageIndex">SPÉCIMEN 01</span>
+          <span class="stage-sep"></span>
+          <span id="stageBody">LARVE</span>
+        </div>
+        <h1 id="stageName">—</h1>
+        <div class="stage-meta">
+          <span id="stageLevel" class="level-tag">Niv. 1</span>
+          <div class="xpbar" role="progressbar" aria-label="Expérience" id="xpBar">
+            <span id="xpFill"></span>
+          </div>
+          <span id="stageXp" class="xp-label">0 / 50 XP</span>
+          <span id="stagePower" class="power-tag">0 PWR</span>
+        </div>
+      </div>
+
+      <div id="stageExpedition" class="stage-expedition hidden"></div>
+
+      <div id="stageStats" class="stage-stats"></div>
+      <div id="actorLabels" class="actor-labels" aria-hidden="true"></div>
+
+      <div id="stageHint" class="stage-hint">
+        <span data-icon="orbit" class="hint-orb"></span>
+        <span>Glisse pour tourner · molette pour zoomer · double-clic pour recentrer</span>
+      </div>
+
+      <div id="stageEmpty" class="stage-empty hidden">
+        <p class="eyebrow">LABORATOIRE VIDE</p>
+        <h2>Aucun spécimen</h2>
+        <p>Crée une créature pour commencer la boucle.</p>
+        <button class="btn primary" type="button" data-tab-jump="assemblage">Créer un spécimen</button>
+      </div>
+    </section>
+
+    <aside id="panel" aria-label="Interface du laboratoire">
+      <nav id="tabs" role="tablist" aria-label="Sections"></nav>
+      <div id="panelBody" role="tabpanel" tabindex="-1"></div>
+      <div id="roster"></div>
+    </aside>
   </div>
-  <button id="rerollBtn">NOUVEAU MONSTRE</button>
+
+  <div id="toastStack" role="status" aria-live="polite"></div>
+  <div id="modalRoot"></div>
+
+  <noscript>
+    <div class="noscript">CHIMÈRE nécessite JavaScript et WebGL.</div>
+  </noscript>
+
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

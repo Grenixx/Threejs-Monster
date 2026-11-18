@@ -1,0 +1,11 @@
+# Données locales du serveur
+data/
+
+# Profils de navigateur headless utilisés pour les captures
+.tmp-edge*/
+.tmp-edge-cdp/
+
+# Captures temporaires
+shot-*.png
+*.log
+*.err
