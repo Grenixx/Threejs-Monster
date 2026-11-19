@@ -1540,6 +1540,13 @@ export function createScene(canvas, options = {}) {
     };
   }
 
+  /**
+   * Retourne l'état du dernier combat d'expédition pour l'UI.
+   */
+  function getExpeditionCombat() {
+    return expeditionCombat;
+  }
+
   function start() {
     resize();
     const loop = () => {
