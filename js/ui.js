@@ -1583,25 +1583,27 @@ export class UI {
         this.recallOne(el.dataset.id);
         break;
       case 'combat-attack': {
-        const result = this.scene.expeditionCombatAction('attack');
-        if (result.result === 'victory' || result.result === 'defeat' || result.result === 'flee') {
-          this.closeModal();
-          if (result.result === 'victory') this.openClaimRewardModal(result);
-          else if (result.result === 'defeat') {
-            const monster = this.game.selectedMonster;
-            const expedition = monster ? this.game.activeExpedition(monster.uid) : null;
-            if (expedition) this.game.abortExpedition(expedition.id);
-            this.toast('Votre spécimen a été vaincu au combat. Aucun butin ramené.', 'warn');
-          }
-        } else {
-          this.openCombatModal(this.scene.getExpeditionCombat());
-        }
+        // Le combat est automatique, cette action ne devrait plus être appelée
+        this.closeModal();
+        break;
+      }
+      case 'combat-heavy': {
+        // Le combat est automatique, cette action ne devrait plus être appelée
+        this.closeModal();
+        break;
+      }
+      case 'combat-heal': {
+        // Le combat est automatique, cette action ne devrait plus être appelée
+        this.closeModal();
         break;
       }
       case 'combat-flee': {
-        this.scene.expeditionCombatAction('flee');
+        // Le combat est automatique, cette action ne devrait plus être appelée
         this.closeModal();
-        this.toast('Vous avez fui le combat.', 'info');
+        break;
+      }
+      case 'combat-result-continue': {
+        this.closeModal();
         break;
       }
       case 'claim-all':
@@ -1743,7 +1745,79 @@ export class UI {
       </div>
       <div class="modal-actions">
         <button class="btn primary" type="button" data-action="combat-attack">Attaquer</button>
+        <button class="btn" type="button" data-action="combat-heavy">Attaque lourde</button>
+        <button class="btn ghost" type="button" data-action="combat-heal">Soigner</button>
         <button class="btn ghost" type="button" data-action="combat-flee">Fuir</button>
+      </div>
+    `);
+  }
+
+  /** Modal de résultat de combat : victoire. */
+  openCombatResultModal(combat) {
+    const { foe, loot, xp, biomass, log, playerHp, playerMaxHp } = combat;
+    const playerPct = playerMaxHp > 0 ? Math.round((playerHp / playerMaxHp) * 100) : 100;
+    const logsHtml = log.slice(-5).map(l => `<div class="combat-log">${esc(l)}</div>`).join('');
+
+    const partsHtml = (loot.parts || []).map(part => `
+      <div class="attach-row">
+        <span class="part-tile rar-${part.rarity}">${icon(PART_TYPES[part.type].icon, 16)}</span>
+        <span class="meta"><b>${esc(part.name)}</b><span>${RARITIES[part.rarity].label} · ${statText(part)}</span></span>
+      </div>
+    `).join('');
+
+    this.openModal(`
+      ${this.modalHead('Combat : Victoire', foe.beat.name, foe.beat.elite ? 'ÉLITE vaincue' : '')}
+      <div class="modal-body">
+        <div class="combat-hp">
+          <div class="hp-row">
+            <span class="hp-name">${esc(foe.beat.name)}</span>
+            <span class="hp-val">Vaincu</span>
+          </div>
+          <div class="hp-row">
+            <span class="hp-name">Vous</span>
+            <span class="hp-val">${playerHp} / ${playerMaxHp}</span>
+          </div>
+          <div class="hp-bar"><div class="hp-fill" style="width:${playerPct}%;background:var(--mint)"></div></div>
+        </div>
+        <div class="combat-log">${logsHtml}</div>
+        <div class="reward-burst">
+          <div class="reward-big">${icon('biomass', 18)}<b>+${formatNumber(biomass)}</b><span>Biomasse</span></div>
+          <div class="reward-big">${icon('shards', 18)}<b>+${formatNumber(loot.shards || 0)}</b><span>Éclats</span></div>
+          <div class="reward-big">${icon('bolt', 18)}<b>+${formatNumber(xp)}</b><span>XP</span></div>
+        </div>
+        ${partsHtml ? `<div class="loot-title"><span class="eyebrow">Parties trouvées</span><span class="line"></span><span class="tiny dim mono">${loot.parts.length}</span></div><div class="part-list">${partsHtml}</div>` : ''}
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" type="button" data-action="combat-result-continue">Continuer</button>
+      </div>
+    `);
+  }
+
+  /** Modal de résultat de combat : défaite. */
+  openCombatDefeatModal(combat) {
+    const { foe, log, playerHp, playerMaxHp, damage } = combat;
+    const playerPct = playerMaxHp > 0 ? Math.round((playerHp / playerMaxHp) * 100) : 0;
+    const logsHtml = log.slice(-5).map(l => `<div class="combat-log">${esc(l)}</div>`).join('');
+
+    this.openModal(`
+      ${this.modalHead('Combat : Défaite', foe.beat.name, foe.beat.elite ? 'ÉLITE' : '')}
+      <div class="modal-body">
+        <div class="combat-hp">
+          <div class="hp-row">
+            <span class="hp-name">${esc(foe.beat.name)}</span>
+            <span class="hp-val">Vainqueur</span>
+          </div>
+          <div class="hp-row">
+            <span class="hp-name">Vous</span>
+            <span class="hp-val">${playerHp} / ${playerMaxHp}</span>
+          </div>
+          <div class="hp-bar"><div class="hp-fill" style="width:${playerPct}%;background:var(--danger)"></div></div>
+        </div>
+        <div class="combat-log">${logsHtml}</div>
+        <div class="notice">${icon('skull', 15)}<span>Votre spécimen a été vaincu. Aucune partie du butin n'est ramenée.</span></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" type="button" data-action="combat-result-continue">Revenir au laboratoire</button>
       </div>
     `);
   }
@@ -2066,10 +2140,18 @@ export class UI {
       this.pendingPop = null;
       this.pendingInstant = false;
       this.scene.clearSelection();
+
+      // Combat automatique : traiter le résultat immédiatement
       const combat = this.scene.getExpeditionCombat();
-      if (combat && combat.active && !combat.combatStarted) {
-        combat.combatStarted = true;
-        this.openCombatModal(combat);
+      if (combat && !combat.combatShown) {
+        combat.combatShown = true;
+        if (combat.result === 'victory') {
+          this.openCombatResultModal(combat);
+        } else if (combat.result === 'defeat') {
+          const expedition = this.game.activeExpedition(monster.uid);
+          if (expedition) this.game.abortExpedition(expedition.id);
+          this.openCombatDefeatModal(combat);
+        }
       }
       return;
     }

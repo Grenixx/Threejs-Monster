@@ -1382,46 +1382,42 @@ export function createScene(canvas, options = {}) {
             const dist = playerZ - foe.beatZ;
             if (dist < 3.5 && dist > -0.5) {
               const foeIndex = expeditionFoes.indexOf(foe);
-              const leader = expeditionActors[0];
-              const leaderStats = leader ? monsterStats(leader.monster) : { force: 5, resistance: 5 };
-              const foeMaxHp = Math.round(30 + foeIndex * 15 + (foe.beat && foe.beat.elite ? 20 : 0));
-              const playerMaxHp = Math.round(50 + (leaderStats.resistance || 0) * 4);
+              // Combat automatique : résolu instantanément, aucun choix du joueur
+              const combatResult = resolveExpeditionCombat(foe, foeIndex);
               expeditionCombat = {
-                active: true,
+                active: false,
                 foe,
-                start: now,
-                foeHp: foeMaxHp,
-                foeMaxHp,
-                playerHp: playerMaxHp,
-                playerMaxHp,
-                combatLog: [],
-                turn: 'player',
-                combatStarted: false,
-                combatRng: mulberry32(now)
+                result: combatResult.result,
+                loot: combatResult.loot,
+                xp: combatResult.xp,
+                biomass: combatResult.biomass,
+                log: combatResult.log,
+                playerHp: combatResult.playerHp,
+                playerMaxHp: combatResult.playerMaxHp,
+                foeHp: combatResult.foeHp,
+                damage: combatResult.damage
               };
-              expeditionCombat.combatLog.push(`Un ${foe.beat.name}${foe.beat.elite ? ' élite' : ''} bloque la route !`);
+              expeditionCombat.combatLog = combatResult.log;
               break;
             }
           }
         }
 
         for (const foe of expeditionFoes) {
-          if (expeditionCombat && expeditionCombat.foe === foe && expeditionCombat.active) {
-            // En combat : l'ennemi reste devant le joueur.
-            foe.group.visible = true;
-            foe.group.position.set(foe.laneX, foe.groundY + foe.baseY, foe.beatZ);
-            foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25;
-            foe.group.scale.setScalar(foe.baseScale);
+          if (expeditionCombat && expeditionCombat.foe === foe && !foe.dying) {
+            // Combat terminé : l'ennemi disparaît (mort ou fuite)
+            foe.dying = true;
+            foe.dyingAt = now;
           } else if (foe.dying) {
-            // Mort : inverse du spawn, recule dans le brouillard derriere.
+            // Mort : inverse du spawn, recule dans le brouillard derrière.
             const k = Math.min(1, (now - foe.dyingAt) / 650);
             foe.group.visible = k < 1;
             foe.group.position.z = foe.beatZ + k * -7;
             foe.group.position.y = foe.groundY + foe.baseY - k * 0.22;
             foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25 * (1 - k);
             foe.group.scale.setScalar(foe.baseScale * (1 - k * 0.55));
-          } else if (!expeditionCombat || !expeditionCombat.active) {
-            // Pas de combat : apparait de devant puis est croise.
+          } else if (!expeditionCombat || expeditionCombat.foe !== foe) {
+            // Pas de combat : apparaît de devant puis est croisé.
             const dist = camZ - foe.beatZ;
             const approaching = dist < 6 && dist > -1;
             if (approaching) {
@@ -1477,66 +1473,71 @@ export function createScene(canvas, options = {}) {
 
   // ------------------------------------------------ COMBAT D'EXPEDITION ----
   /**
-   * Action du joueur pendant un combat d'expédition.
-   * @param {string} action - 'attack' ou 'flee'
+   * Résout automatiquement un combat d'expédition quand un ennemi apparaît.
+   * Aucun choix du joueur : le résultat dépend des stats des deux côtés.
    * @returns {Object} Résultat du combat
    */
-  function expeditionCombatAction(action) {
-    if (!expeditionCombat || !expeditionCombat.active) return { result: 'none' };
-    const { foe, combatLog, combatRng } = expeditionCombat;
+  function resolveExpeditionCombat(foe, foeIndex) {
     const leader = expeditionActors[0];
     const leaderStats = leader ? monsterStats(leader.monster) : { force: 5, resistance: 5 };
-    const rng = combatRng || mulberry32(Date.now());
+    const rng = mulberry32(Date.now());
 
-    if (action === 'flee') {
-      expeditionCombat.active = false;
-      expeditionCombat = null;
-      return { result: 'flee' };
-    }
+    const foeMaxHp = Math.round(30 + foeIndex * 15 + (foe.beat && foe.beat.elite ? 20 : 0));
+    const playerMaxHp = Math.round(50 + (leaderStats.resistance || 0) * 4);
 
-    if (action === 'attack') {
-      // Dégâts du joueur
-      const playerDmg = Math.round((leaderStats.force || 5) * 1.2 + rng() * 10);
-      expeditionCombat.foeHp -= playerDmg;
-      combatLog.push(`Vous infligez ${playerDmg} dégâts à ${foe.beat.name}.`);
+    // Simulation tour par tour (max 20 tours)
+    let playerHp = playerMaxHp;
+    let foeHp = foeMaxHp;
+    const log = [];
+    let winner = null;
 
-      if (expeditionCombat.foeHp <= 0) {
-        // Victoire : l'ennemi meurt, butin et XP
-        expeditionCombat.active = false;
-        expeditionCombat.foe.dying = true;
-        expeditionCombat.foe.dyingAt = now;
-        const zone = currentZone || { id: 'fosses', biomass: 160, xp: 15 };
-        const loot = rollLoot(zone, leaderStats, rng, 'expedition:combat', 1);
-        expeditionCombat.loot = loot;
-        expeditionCombat.xp = zone.xp;
-        expeditionCombat.biomass = zone.biomass;
-        expeditionCombat.result = 'victory';
-        return { result: 'victory', loot, xp: zone.xp, biomass: zone.biomass, damage: playerDmg };
+    for (let turn = 0; turn < 20; turn++) {
+      // Le joueur attaque en premier
+      const playerDmg = Math.round((leaderStats.force || 5) * 1.3 + rng() * 12);
+      foeHp -= playerDmg;
+      log.push(`Vous infligez ${playerDmg} dégâts à ${foe.beat.name}.`);
+
+      if (foeHp <= 0) {
+        winner = 'player';
+        break;
       }
 
-      // Riposte de l'ennemi
-      const foeDmg = Math.round((5 + expeditionCombat.foeIndex * 5) * 0.8 + rng() * 8);
-      expeditionCombat.playerHp -= foeDmg;
-      combatLog.push(`L'ennemi vous inflige ${foeDmg} dégâts.`);
+      // L'ennemi riposte
+      const foeDmg = Math.round((5 + foeIndex * 5) * 0.9 + rng() * 8);
+      playerHp -= foeDmg;
+      log.push(`L'ennemi vous inflige ${foeDmg} dégâts.`);
 
-      if (expeditionCombat.playerHp <= 0) {
-        // Défaite : fin de l'expédition
-        expeditionCombat.active = false;
-        expeditionCombat = null;
-        return { result: 'defeat', damage: foeDmg };
+      if (playerHp <= 0) {
+        winner = 'foe';
+        break;
       }
-
-      return { result: 'continue', damage: playerDmg, foeDamage: foeDmg };
     }
 
-    return { result: 'none' };
-  }
+    if (winner === 'player') {
+      // Victoire : butin et XP
+      const zone = currentZone || { id: 'fosses', biomass: 160, xp: 15 };
+      const loot = rollLoot(zone, leaderStats, rng, 'expedition:combat', 1);
+      return {
+        result: 'victory',
+        loot,
+        xp: zone.xp,
+        biomass: zone.biomass,
+        log,
+        foeHp: 0,
+        playerHp: Math.max(0, playerHp),
+        playerMaxHp
+      };
+    }
 
-  /**
-   * Retourne l'état actuel du combat pour l'UI.
-   */
-  function getExpeditionCombat() {
-    return expeditionCombat;
+    // Défaite
+    return {
+      result: 'defeat',
+      log,
+      foeHp,
+      playerHp: Math.max(0, playerHp),
+      playerMaxHp,
+      damage: playerMaxHp - Math.max(0, playerHp)
+    };
   }
 
   function start() {
