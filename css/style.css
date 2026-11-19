@@ -1316,61 +1316,65 @@ h3 { font-size: 14px; font-weight: 600; }
 .exp-live.raid .exp-progress i { background: linear-gradient(90deg, #ff8a6b, var(--amber)); }
 .exp-live.raid.ready { border-color: rgba(255, 196, 107, 0.55); box-shadow: 0 0 26px rgba(255, 196, 107, 0.12); }
 
-/* Journal d'expédition — défilement type Fallout Shelter */
+/* Journal d'expédition — clean, Fallout Shelter */
 .exp-journal {
-  margin: 2px 0 9px;
-  padding: 7px 8px;
-  max-height: 148px;
-  overflow: hidden;
+  margin: 6px 0 10px;
+  padding: 8px 10px;
+  max-height: 150px;
+  overflow-y: auto;
+  scrollbar-width: thin;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(6, 5, 12, 0.55);
+  background: rgba(6, 5, 12, 0.4);
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   line-height: 1.35;
-  mask-image: linear-gradient(180deg, transparent 0, #000 14px);
 }
+
+.exp-journal::-webkit-scrollbar { width: 4px; }
+.exp-journal::-webkit-scrollbar-thumb { background: rgba(163, 142, 255, 0.15); border-radius: 2px; }
 
 .exp-journal .jrow {
   display: grid;
-  grid-template-columns: 34px 14px 1fr;
+  grid-template-columns: 30px 16px 1fr;
   align-items: start;
-  gap: 6px;
+  gap: 5px;
   color: var(--muted);
-  border-left: 2px solid transparent;
-  padding-left: 6px;
+  padding: 1px 4px;
+  border-radius: 6px;
 }
 
-.exp-journal .jtime { color: var(--dim); font-size: 9.5px; letter-spacing: 0.02em; }
-.exp-journal .jicon { display: inline-flex; color: var(--dim); }
-.exp-journal .jicon svg { width: 12px; height: 12px; }
-.exp-journal .jtext { min-width: 0; }
+.exp-journal .jrow:hover { background: rgba(255,255,255,0.03); }
 
-.exp-journal .jrow.start { color: var(--text); border-left-color: var(--accent); }
-.exp-journal .jrow.threat { color: var(--amber); border-left-color: var(--amber); }
-.exp-journal .jrow.damage { color: var(--danger); border-left-color: var(--danger); }
-.exp-journal .jrow.damage .jicon,
-.exp-journal .jrow.threat .jicon { color: currentColor; }
-.exp-journal .jrow.kill { color: var(--mint); border-left-color: var(--mint-2); }
-.exp-journal .jrow.loot { color: var(--mint); border-left-color: var(--mint-2); }
-.exp-journal .jrow.relic { color: var(--accent); border-left-color: var(--accent); }
-.exp-journal .jrow.return { color: var(--mint); border-left-color: var(--mint-2); }
+.exp-journal .jtime { color: var(--dim); font-size: 8.5px; letter-spacing: 0.02em; white-space: nowrap; }
+.exp-journal .jicon { display: inline-flex; color: var(--dim); }
+.exp-journal .jicon svg { width: 11px; height: 11px; }
+.exp-journal .jtext { min-width: 0; font-size: 10px; }
+
+.exp-journal .jrow.start { color: var(--text); }
+.exp-journal .jrow.threat { color: var(--amber); }
+.exp-journal .jrow.damage { color: var(--danger); }
+.exp-journal .jrow.kill { color: var(--mint); }
+.exp-journal .jrow.loot { color: var(--mint); }
+.exp-journal .jrow.relic { color: var(--accent); }
+.exp-journal .jrow.return { color: var(--mint); }
 .exp-journal .jrow.moving { color: var(--dim); font-style: italic; }
 .exp-journal .jrow.moving .jicon { animation: journalPulse 1.6s ease-in-out infinite; }
 .exp-journal .jrow.kill .jicon,
 .exp-journal .jrow.loot .jicon,
-.exp-journal .jrow.relic .jicon { color: currentColor; }
+.exp-journal .jrow.relic .jicon,
+.exp-journal .jrow.threat .jicon { color: currentColor; }
 
 @keyframes journalPulse {
   0%, 100% { opacity: 0.35; transform: translateX(0); }
-  50% { opacity: 1; transform: translateX(2px); }
+  50% { opacity: 1; transform: translateX(1px); }
 }
 
 @media (max-width: 980px) {
-  .exp-journal { max-height: 118px; font-size: 10px; }
+  .exp-journal { max-height: 110px; font-size: 9.5px; }
 }
 .exp-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .exp-monster { font-size: 12px; font-weight: 600; }

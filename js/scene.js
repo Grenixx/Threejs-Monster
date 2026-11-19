@@ -1179,32 +1179,46 @@ export function createScene(canvas, options = {}) {
         prop.rotation.y += prop.userData.spin * dt;
       }
 
-      // Rencontres : chaque ennemi sort du brouillard puis se fait abattre à
-      // l'instant de sa rencontre, comme un combat de quête Fallout Shelter.
+      // Rencontres : chaque ennemi sort du brouillard (spawn) puis s'y retire
+      // (mort = inverse exact du spawn), comme un combat de quête Fallout Shelter.
       if (expeditionClock) {
         const now = Date.now();
         const span = expeditionClock.duration * 1000;
         const progress = Math.max(0, Math.min(1, (now - expeditionClock.startedAt) / span));
+        const spawnDur = 0.22;
+        const stayDur = 0.10;
         for (const foe of expeditionFoes) {
-          const appear = Math.max(0, foe.beat.at - 0.24);
-          if (!foe.dying && progress >= foe.beat.at) {
+          const spawnStart = Math.max(0, foe.beat.at - spawnDur - stayDur);
+          const spawnEnd = spawnStart + spawnDur;
+          const dieStart = foe.beat.at;
+          if (!foe.dying && progress >= dieStart) {
             foe.dying = true;
             foe.dyingAt = now;
             if (foe.labelEl) foe.labelEl.style.opacity = '0';
           }
           if (foe.dying) {
+            // Mort : inverse du spawn, disparait vers le brouillard.
             const k = Math.min(1, (now - foe.dyingAt) / 650);
             foe.group.visible = k < 1;
-            foe.group.rotation.z = k * 1.3;
+            foe.group.position.z = 0 + k * -7.4;
             foe.group.position.y = foe.baseY - k * 0.22;
+            foe.group.rotation.z = k * 1.3;
             foe.group.scale.setScalar(foe.baseScale * (1 - k * 0.55));
-          } else if (progress >= appear) {
-            const k = Math.min(1, (progress - appear) / 0.24);
+          } else if (progress >= spawnStart && progress < spawnEnd) {
+            // Spawn : apparait depuis le brouillard.
+            const k = Math.min(1, Math.max(0, (progress - spawnStart) / spawnDur));
             foe.group.visible = true;
             foe.group.position.z = -7 + k * 7.4;
             foe.group.position.y = foe.baseY + Math.abs(Math.sin(t * 7 + foe.phase)) * 0.05 * k;
             foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25;
             foe.group.scale.setScalar(foe.baseScale * (0.55 + 0.45 * k));
+          } else if (progress >= spawnEnd && progress < dieStart) {
+            // Visible, attend son tour de mourir.
+            foe.group.visible = true;
+            foe.group.position.z = 0;
+            foe.group.position.y = foe.baseY + Math.abs(Math.sin(t * 7 + foe.phase)) * 0.05;
+            foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25;
+            foe.group.scale.setScalar(foe.baseScale);
           } else if (foe.group.visible) {
             foe.group.visible = false;
           }

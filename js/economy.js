@@ -566,33 +566,29 @@ export function formatClock(seconds) {
 // elles ne modifie les PV (déjà simulés en continu) : le journal se contente
 // d'expliquer la courbe de vie.
 
-export const EXPEDITION_BEASTS = {
-  fosses: [
-    { id: 'radcafard', name: 'Radcafard', shape: 'roach', shift: -0.04 },
-    { id: 'spore', name: 'Spore grouillante', shape: 'blob', shift: 0.02 },
-    { id: 'ver-souche', name: 'Ver de souche', shape: 'worm', shift: -0.08 }
-  ],
-  sel: [
-    { id: 'scarabee', name: 'Scarabée de sel', shape: 'roach', shift: 0.02 },
-    { id: 'chien-poussiere', name: 'Chien de poussière', shape: 'beast', shift: -0.03 },
-    { id: 'racine', name: 'Racine sèche', shape: 'worm', shift: 0.05 }
-  ],
-  verre: [
-    { id: 'eclat-rampant', name: 'Éclat rampant', shape: 'blob', shift: 0.04 },
-    { id: 'veuve-verre', name: 'Veuve de verre', shape: 'roach', shift: 0.02 },
-    { id: 'miroir', name: 'Miroir hurlant', shape: 'eye', shift: -0.05 }
-  ],
-  nebuleuse: [
-    { id: 'spectre-gaz', name: 'Spectre de gaz', shape: 'eye', shift: 0.03 },
-    { id: 'oeil-mort', name: 'Œil mort', shape: 'eye', shift: -0.02 },
-    { id: 'priere', name: 'Prière flottante', shape: 'blob', shift: 0.06 }
-  ],
-  ventre: [
-    { id: 'parasite', name: 'Parasite digestif', shape: 'worm', shift: -0.01 },
-    { id: 'langue', name: 'Langue du Ventre', shape: 'beast', shift: 0.02 },
-    { id: 'gardien-chair', name: 'Gardien de chair', shape: 'eye', shift: 0.03 }
-  ]
+export const BEAST_NAMES = {
+  fosses: ['Radcafard', 'Spore grouillante', 'Ver de souche', 'Champi-crocs', 'Lampe-venin'],
+  sel: ['Scarabée de sel', 'Chien de poussière', 'Racine sèche', 'Sable-gueule', 'Écailloir'],
+  verre: ['Éclat rampant', 'Veuve de verre', 'Miroir hurlant', 'Verre-âme', 'Prisme ocellé'],
+  nebuleuse: ['Spectre de gaz', 'Œil mort', 'Prière flottante', 'Nuage-crocs', 'Brume-perce'],
+  ventre: ['Parasite digestif', 'Langue du Ventre', 'Gardien de chair', 'Épave-vivante', 'Cœur-puits']
 };
+
+export const BEAST_SHAPES = ['worm', 'eye', 'beast', 'roach'];
+
+/** Génère un monstre aléatoire pour une zone, tiré de la graine de l'expédition. */
+export function generateRandomBeast(rng, zone) {
+  const names = BEAST_NAMES[zone?.id] || BEAST_NAMES.fosses;
+  const shape = BEAST_SHAPES[Math.floor(rng() * BEAST_SHAPES.length)];
+  const name = names[Math.floor(rng() * names.length)];
+  return {
+    id: `beast-${uid('b')}`,
+    name,
+    shape,
+    elite: rng() < 0.15,
+    hue: (zone?.hue ?? 0.28 + (rng() - 0.5) * 0.18 + 1) % 1
+  };
+}
 
 export function beastsForZone(zone) {
   return EXPEDITION_BEASTS[zone?.id] || EXPEDITION_BEASTS.fosses;
@@ -606,7 +602,6 @@ export function expeditionBeats(members, zone, seed, duration) {
   const list = (members || []).filter(Boolean);
   if (!list.length) return [];
   const rng = mulberry32((seed >>> 0) || 1);
-  const beasts = beastsForZone(zone);
   // Une rencontre toutes les ~15 % du trajet, entre 4 et 7 au total.
   const count = 4 + Math.floor(rng() * 4);
   const beats = [];
@@ -614,15 +609,12 @@ export function expeditionBeats(members, zone, seed, duration) {
     const at = +(0.12 + ((i + 1) * 0.78) / (count + 1)).toFixed(3);
     const roll = rng();
     const target = list[Math.floor(rng() * list.length)] || list[0];
-    const beast = beasts[Math.floor(rng() * beasts.length)] || beasts[0];
     const kind = roll < 0.62 ? 'enemy' : roll < 0.88 ? 'loot' : 'relic';
     beats.push({
       id: `beat${i}`,
       at,
       kind,
-      beast: kind === 'enemy'
-        ? { id: beast.id, name: beast.name, shape: beast.shape, hue: (zone.hue + beast.shift + 1) % 1 }
-        : null,
+      beast: kind === 'enemy' ? generateRandomBeast(rng, zone) : null,
       targetUid: target.uid,
       amount: 6 + Math.floor(rng() * 18)
     });
