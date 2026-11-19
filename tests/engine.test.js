@@ -8,7 +8,7 @@ import {
   generateMonsterName, generateResearcherName, generateRandomBeast,
   expeditionBeats, expeditionJournal, deriveRole
 } from '../js/economy.js';
-import { ZONE_BY_ID, BALANCE } from '../js/data.js';
+import { ZONE_BY_ID, BALANCE, PART_TYPES } from '../js/data.js';
 import {
   npcLabs, resolveRaid, attackerSnapshot, defenderSnapshot, labDefense, raidDuration
 } from '../js/raid.js';
@@ -461,6 +461,54 @@ test('placement des monstres sans clipping (largeurs respectées)', () => {
     const minGap = (monsters[i].width + monsters[i + 1].width) / 2 + margin;
     assert.ok(gap >= minGap - 0.001, `monstres ${i} et ${i+1} se chevauchent: gap=${gap} min=${minGap}`);
   }
+});
+
+test('parties de corps : torse et base sont générables et équipables', () => {
+  const game = makeGameShell();
+  const monster = game.state.monsters[0];
+
+  // Générer et ajouter une partie torse à l'inventaire
+  const torse = generatePart('torse', 'common', 100);
+  assert.ok(torse, 'torse générée');
+  assert.equal(torse.type, 'torse');
+  assert.ok(torse.stats.force > 0);
+  assert.ok(torse.stats.resistance > 0);
+  game.state.inventory.push(torse);
+
+  // Générer et ajouter une partie base à l'inventaire
+  const base = generatePart('base', 'rare', 200);
+  assert.ok(base, 'base générée');
+  assert.equal(base.type, 'base');
+  assert.ok(base.stats.resistance > 0);
+  assert.ok(base.stats.force > 0);
+  assert.ok(base.stats.voracite > 0);
+  game.state.inventory.push(base);
+
+  // Équiper les deux parties
+  const r1 = game.attachPart(monster.uid, torse.uid, 0);
+  assert.ok(r1.ok, `torse équipable: ${r1.reason}`);
+  assert.ok(monster.attachments.some(a => a.part.uid === torse.uid));
+
+  const r2 = game.attachPart(monster.uid, base.uid, 1);
+  assert.ok(r2.ok, `base équipable: ${r2.reason}`);
+  assert.ok(monster.attachments.some(a => a.part.uid === base.uid));
+
+  // Les stats du monstre doivent refléter les parties
+  const stats = monsterStats(monster);
+  assert.ok(stats.force >= torse.stats.force + base.stats.force);
+  assert.ok(stats.resistance >= torse.stats.resistance + base.stats.resistance);
+  assert.ok(stats.voracite >= torse.stats.voracite + base.stats.voracite);
+});
+
+test('règles de socket des parties de corps cohérentes', () => {
+  const torse = PART_TYPES.torse;
+  const base = PART_TYPES.base;
+  assert.ok(torse, 'torse définie dans PART_TYPES');
+  assert.ok(base, 'base définie dans PART_TYPES');
+  assert.ok(torse.rule.yMin <= torse.rule.yMax, 'torse yMin <= yMax');
+  assert.ok(base.rule.yMin <= base.rule.yMax, 'base yMin <= yMax');
+  assert.ok(torse.rule.max >= 1, 'torse max >= 1');
+  assert.ok(base.rule.max >= 1, 'base max >= 1');
 });
 
 console.log(`\n${passed} test(s) passée(s).`);
