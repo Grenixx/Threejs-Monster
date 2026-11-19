@@ -21,7 +21,7 @@ export const floorVert = /* glsl */`
 
   void main() {
     vec4 wp = modelMatrix * vec4(position, 1.0);
-    float disp = noise(wp.xz * 0.8) * 3.0;
+    float disp = noise(wp.xz * 0.8) * 1.2;
     wp.y += disp;
     vWorldPos = wp.xyz;
     // Normale : pour surface r(x,z)=(x,h(x,z),z), normale = (-dh/dx, 1, -dh/dz)

@@ -522,7 +522,7 @@ export function createScene(canvas, options = {}) {
 
   /** Hauteur du sol à (x, z), identique au vertex shader du sol. */
   function groundHeight(x, z) {
-    return groundNoise(x * 0.8, z * 0.8) * 3.0;
+    return groundNoise(x * 0.8, z * 0.8) * 1.2;
   }
 
   /** Normale du sol à (x, z), identique au vertex shader du sol. */
