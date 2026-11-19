@@ -574,23 +574,6 @@ export class Game {
   }
 
   // ----- corps / monstres -----
-  unlockBody(bodyId) {
-    const body = BODIES[bodyId];
-    if (!body) return { ok: false, reason: 'Corps inconnu.' };
-    if (this.state.unlocks.bodies.includes(bodyId)) return { ok: false, reason: 'Déjà débloqué.' };
-    const { biomass, shards } = body.unlockCost;
-    if (this.state.resources.biomass < biomass || this.state.resources.shards < shards) {
-      return { ok: false, reason: 'Ressources insuffisantes.' };
-    }
-    this.state.resources.biomass -= biomass;
-    this.state.resources.shards -= shards;
-    this.state.unlocks.bodies.push(bodyId);
-    logEntry(this.state, `Plan du ${body.label} débloqué.`, 'unlock');
-    this.emitEvent('toast', { text: `Plan débloqué : ${body.label}`, kind: 'success' });
-    this.commit();
-    return { ok: true };
-  }
-
   createMonster(bodyId) {
     const body = BODIES[bodyId];
     if (!body) return { ok: false, reason: 'Corps inconnu.' };
@@ -775,6 +758,25 @@ export class Game {
       if (result.ok) results.push(result);
     }
     return results;
+  }
+
+  /** Termine une expédition par défaite au combat.
+   * Les monstres reviennent bredouilles, pas de butin, pas d'XP. */
+  abortExpedition(expeditionId) {
+    const index = this.state.expeditions.findIndex(e => e.id === expeditionId);
+    if (index === -1) return { ok: false, reason: 'Expédition introuvable.' };
+    const exp = this.state.expeditions[index];
+    const members = this.expeditionMembers(exp);
+    const zone = ZONE_BY_ID[exp.zoneId];
+    this.state.expeditions.splice(index, 1);
+    const names = members.map(m => m.name).join(', ');
+    logEntry(this.state, `${names} rentre bredouille de ${zone.name} après avoir été vaincu.`, 'expedition');
+    this.emitEvent('toast', {
+      text: `${names} vaincu(s) au combat. Aucun butin ramené.`,
+      kind: 'warn'
+    });
+    this.commit({ reason: 'abort' });
+    return { ok: true, monsters: members, zone };
   }
 
   /** Rappelle une expédition avant la fin. Les monstres reviennent avec leur HP actuel.

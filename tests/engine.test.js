@@ -463,4 +463,4 @@ test('placement des monstres sans clipping (largeurs respectées)', () => {
   }
 });
 
-console.log(`\n${passed} test(s) passé(s).`);
+console.log(`\n${passed} test(s) passée(s).`);

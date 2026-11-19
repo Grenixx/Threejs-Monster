@@ -101,6 +101,18 @@ export const PART_TYPES = {
     stats: { perception: 3, vitesse: 2 },
     rule: { yMin: 0.15, yMax: 1, max: 4, scale: 1.2, sink: 0.03 },
     blurb: 'Entend les gisements avant tout le monde.'
+  },
+  torse: {
+    label: 'Torses', singular: 'Torse', icon: 'spike', gender: 'm',
+    stats: { force: 6, resistance: 4, voracite: 2 },
+    rule: { yMin: -0.5, yMax: 1, max: 4, scale: 1.6, sink: 0.15 },
+    blurb: 'Un torse renforcé pour supporter plus de greffes.'
+  },
+  base: {
+    label: 'Bases de corps', singular: 'Base de corps', icon: 'colosse', gender: 'f',
+    stats: { resistance: 8, force: 4, voracite: 3 },
+    rule: { yMin: -1, yMax: 1, max: 2, scale: 2.0, sink: 0.2 },
+    blurb: 'Une base de corps solide qui change toute l\'allure du spécimen.'
   }
 };
 

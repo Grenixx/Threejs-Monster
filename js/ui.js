@@ -1587,7 +1587,12 @@ export class UI {
         if (result.result === 'victory' || result.result === 'defeat' || result.result === 'flee') {
           this.closeModal();
           if (result.result === 'victory') this.openClaimRewardModal(result);
-          else if (result.result === 'defeat') this.toast('Votre spécimen a été vaincu au combat.', 'warn');
+          else if (result.result === 'defeat') {
+            const monster = this.game.selectedMonster;
+            const expedition = monster ? this.game.activeExpedition(monster.uid) : null;
+            if (expedition) this.game.abortExpedition(expedition.id);
+            this.toast('Votre spécimen a été vaincu au combat. Aucun butin ramené.', 'warn');
+          }
         } else {
           this.openCombatModal(this.scene.getExpeditionCombat());
         }
@@ -2735,15 +2740,6 @@ export class UI {
       case 'publish-sale':
         await this.publishSale(el.dataset.kind, el.dataset.uid);
         break;
-      case 'unlock-body': {
-        const result = game.unlockBody(el.dataset.body);
-        if (result.ok) {
-          this.openBodyModal();
-        } else {
-          this.toast(result.reason, 'warn');
-        }
-        break;
-      }
       case 'create-body': {
         const result = game.createMonster(el.dataset.body);
         if (result.ok) {
