@@ -1979,7 +1979,11 @@ export class UI {
     if (key === this.lastKey) {
       if (builder) {
         this.scene.setBuilderMode(true);
-        this.scene.setSelection(this.selection, validSocketsFor(monster, this.selection));
+        if (this.selection) {
+          this.scene.setSelection(this.selection, validSocketsFor(monster, this.selection));
+        } else {
+          this.scene.clearSelection();
+        }
       }
       return;
     }

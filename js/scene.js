@@ -99,15 +99,66 @@ export function createScene(canvas, options = {}) {
 
   const controls = new OrbitControls(camera, renderer.domElement);
   canvas.style.cursor = 'grab';
-  controls.target.set(0, 1.25, 0);
   controls.enableDamping = true;
   controls.dampingFactor = 0.075;
   controls.minDistance = 2.2;
   controls.maxDistance = 8;
   controls.enablePan = false;
+  controls.enableZoom = true;
   controls.maxPolarAngle = Math.PI * 0.52;
   controls.minPolarAngle = Math.PI * 0.16;
+  controls.target.set(0, 1.25, 0);
   controls.update();
+
+  // ------------------------------------------------ CADRAGE CAMÉRA ----
+  // L'orbite est horizontale : l'élévation du cadrage est figée à chaque
+  // placement, donc le sol ne bascule jamais quand on tourne autour du monstre.
+  // Le zoom du joueur ne traverse pas un changement de mode : chaque écran
+  // (labo / expédition) repart de son cadrage, mais l'angle horizontal choisi
+  // par le joueur est conservé.
+  const UP = new THREE.Vector3(0, 1, 0);
+  let orbitAzimuth = 0;   // rotation horizontale demandée par le joueur
+  let baseAzimuth = 0;    // rotation horizontale du cadrage courant
+  let currentFraming = null; // 'idle' | 'expedition'
+
+  function lockElevation() {
+    const off = new THREE.Vector3().subVectors(camera.position, controls.target);
+    const len = off.length() || 1;
+    const phi = Math.acos(THREE.MathUtils.clamp(off.y / len, -1, 1));
+    controls.minPolarAngle = phi;
+    controls.maxPolarAngle = phi;
+  }
+
+  /** Place la caméra sur le cadrage voulu (position de base + hauteur visée). */
+  function placeCamera(base, targetY, framing) {
+    controls.target.set(0, targetY, 0);
+    const off = new THREE.Vector3(base[0], base[1] - targetY, base[2]);
+    baseAzimuth = Math.atan2(off.x, off.z);
+    off.applyAxisAngle(UP, orbitAzimuth);
+    camera.position.copy(controls.target).add(off);
+    controls.update();
+    lockElevation();
+    currentFraming = framing;
+  }
+
+  // Cadrage du labo selon la forme de l'écran.
+  function idleFraming() {
+    const mobile = window.innerWidth <= 980;
+    const landscape = window.innerWidth > window.innerHeight && window.innerHeight < 560;
+    const aspect = camera.aspect || 1;
+    const distance = landscape ? 7.3 : mobile ? 6.6 : aspect < 0.9 ? 6.2 : aspect < 1.35 ? 5.9 : 5.7;
+    return {
+      base: [0.85, landscape ? 2.55 : mobile ? 2.35 : 2.0, distance],
+      targetY: landscape ? 1.72 : mobile ? 1.62 : 1.3
+    };
+  }
+
+  // Retient la rotation horizontale du joueur (les mouvements verticaux sont
+  // ignorés : l'élévation reste figée).
+  controls.addEventListener('end', () => {
+    const off = new THREE.Vector3().subVectors(camera.position, controls.target);
+    orbitAzimuth = Math.atan2(off.x, off.z) - baseAzimuth;
+  });
 
   // -----------------------------------------------------------
   // CIEL
@@ -524,8 +575,9 @@ export function createScene(canvas, options = {}) {
     builderMode = false;
     spawnAnim = null;
 
+    // Le décor d'expédition reste aligné sur le monde : seule la caméra tourne
+    // (orbite horizontale), jamais le sol ni les ressources.
     const root = new THREE.Group();
-    root.quaternion.copy(viewQuaternion);
     expeditionRoot = root;
     scene.add(root);
 
@@ -548,6 +600,8 @@ export function createScene(canvas, options = {}) {
       const baseX = offsets[index];
       actor.position.set(baseX, 0.02 - bbox2.min.y, 0);
       actor.rotation.y = (index - (list.length - 1) / 2) * 0.12;
+      actor.userData.baseYaw = actor.rotation.y;
+      actor.userData.yaw = 0;
 
 
       const role = ROLES[monster.role] || ROLES.harvester;
@@ -578,10 +632,8 @@ export function createScene(canvas, options = {}) {
     applyPalette(opts.hue ?? zone.hue);
     expeditionMode = true;
 
-    if (!userMovedCamera) {
-      controls.target.set(0, 0.95, 0);
-      camera.position.set(0.9, 1.95, 6.3);
-      controls.update();
+    if (currentFraming !== 'expedition') {
+      placeCamera([0.9, 1.95, 6.3], 0.95, 'expedition');
     }
   }
 
@@ -618,10 +670,9 @@ export function createScene(canvas, options = {}) {
     const groupScale = fitGroup(currentGroup);
     applyPalette(built.hue);
 
-    if (!userMovedCamera) {
-      controls.target.set(0, 1.18, 0);
-      camera.position.set(0.85, 1.95, 5.7);
-      controls.update();
+    if (currentFraming !== 'idle') {
+      const framing = idleFraming();
+      placeCamera(framing.base, framing.targetY, 'idle');
     }
 
 
@@ -730,12 +781,29 @@ export function createScene(canvas, options = {}) {
     return null;
   }
 
-  function pickMonsterHit(event) {
-    const root = activeRoot();
-    if (!root) return false;
+  /**
+   * Renvoie l'objet à faire tourner quand on attrape le monstre.
+   * En expédition on ne prend que le spécimen touché : le décor (ressources,
+   * props) ne doit jamais suivre la rotation.
+   */
+  function pickGrabTarget(event) {
     updateNdc(event);
     raycaster.setFromCamera(pointerNdc, camera);
-    return raycaster.intersectObject(root, true).length > 0;
+
+    if (expeditionMode) {
+      if (!expeditionRoot) return null;
+      const hits = raycaster.intersectObject(expeditionRoot, true);
+      for (const hit of hits) {
+        let node = hit.object;
+        while (node && node.parent !== expeditionRoot) node = node.parent;
+        const actor = expeditionActors.find(a => a.group === node);
+        if (actor) return actor.group;
+      }
+      return null;
+    }
+
+    if (!currentGroup) return null;
+    return raycaster.intersectObject(currentGroup, true).length ? currentGroup : null;
   }
 
   function setCursor(value) {
@@ -750,14 +818,16 @@ export function createScene(canvas, options = {}) {
     lastX: 0,
     lastY: 0,
     marker: null,
-    partUid: null
+    partUid: null,
+    target: null
   };
 
   canvas.addEventListener('pointerdown', event => {
     if (event.button !== 0 && event.pointerType === 'mouse') return;
     const marker = pickMarker(event);
     const partUid = marker ? null : pickPart(event);
-    if (!marker && !partUid && !pickMonsterHit(event)) return;
+    const grabTarget = marker || partUid ? null : pickGrabTarget(event);
+    if (!marker && !partUid && !grabTarget) return;
 
     // Empêche OrbitControls de démarrer sur le monstre.
     event.stopImmediatePropagation();
@@ -771,6 +841,7 @@ export function createScene(canvas, options = {}) {
     interaction.lastY = event.clientY;
     interaction.marker = marker;
     interaction.partUid = partUid;
+    interaction.target = grabTarget;
     setCursor('grabbing');
   }, { capture: true });
 
@@ -784,7 +855,7 @@ export function createScene(canvas, options = {}) {
         hoveredMarker = marker;
         if (hoveredMarker) setMarkerState(hoveredMarker, 'hover');
       }
-      setCursor(marker || pickPart(event) ? 'pointer' : (pickMonsterHit(event) ? 'grab' : 'default'));
+      setCursor(marker || pickPart(event) ? 'pointer' : (pickGrabTarget(event) ? 'grab' : 'default'));
       return;
     }
 
@@ -796,15 +867,19 @@ export function createScene(canvas, options = {}) {
     if (!interaction.moved && Math.hypot(totalDx, totalDy) > 6) {
       interaction.moved = true;
     }
-    if (interaction.moved) {
-      const root = activeRoot();
-      if (!root) return;
-      const axisX = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-      const axisY = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-      const qX = new THREE.Quaternion().setFromAxisAngle(axisY, dx * 0.01);
-      const qY = new THREE.Quaternion().setFromAxisAngle(axisX, dy * 0.01);
-      root.quaternion.premultiply(qX).premultiply(qY);
-      viewQuaternion.copy(root.quaternion);
+    if (interaction.moved && interaction.target) {
+      const target = interaction.target;
+      if (expeditionMode) {
+        // Rotation du spécimen autour de lui-même (le décor reste en place).
+        target.userData.yaw = (target.userData.yaw || 0) + dx * 0.012;
+      } else {
+        const axisX = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        const axisY = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+        const qX = new THREE.Quaternion().setFromAxisAngle(axisY, dx * 0.01);
+        const qY = new THREE.Quaternion().setFromAxisAngle(axisX, dy * 0.01);
+        target.quaternion.premultiply(qX).premultiply(qY);
+        viewQuaternion.copy(target.quaternion);
+      }
     }
 
     interaction.lastX = event.clientX;
@@ -820,6 +895,7 @@ export function createScene(canvas, options = {}) {
     interaction.down = false;
     interaction.marker = null;
     interaction.partUid = null;
+    interaction.target = null;
     setCursor('grab');
 
     if (moved) return;
@@ -832,6 +908,7 @@ export function createScene(canvas, options = {}) {
 
   canvas.addEventListener('dblclick', () => {
     viewQuaternion.identity();
+    for (const actor of expeditionActors) actor.group.userData.yaw = 0;
     const root = activeRoot();
     if (root) root.quaternion.identity();
   });
@@ -855,14 +932,11 @@ export function createScene(canvas, options = {}) {
   let userMovedCamera = false;
   controls.addEventListener('start', () => { userMovedCamera = true; });
 
-  function frameCamera(aspect) {
+  function frameCamera() {
     if (userMovedCamera) return;
-    const mobile = window.innerWidth <= 980;
-    const landscape = window.innerWidth > window.innerHeight && window.innerHeight < 560;
-    const distance = landscape ? 7.3 : mobile ? 6.6 : aspect < 0.9 ? 6.2 : aspect < 1.35 ? 5.9 : 5.7;
-    camera.position.set(0.85, landscape ? 2.55 : mobile ? 2.35 : 2.0, distance);
-    controls.target.set(0, landscape ? 1.72 : mobile ? 1.62 : 1.3, 0);
-    controls.update();
+    if (currentFraming && currentFraming !== 'idle') return;
+    const framing = idleFraming();
+    placeCamera(framing.base, framing.targetY, 'idle');
   }
 
   window.addEventListener('resize', resize);
@@ -935,6 +1009,7 @@ export function createScene(canvas, options = {}) {
         actor.group.position.z = Math.sin(t * 0.45 + phase) * 0.12;
         actor.group.position.y = actor.baseY + Math.abs(walk) * 0.035;
 
+        let roleYaw = 0;
         if (actor.roleKey === 'raider') {
           const lunge = Math.max(0, Math.sin(t * 1.3 + phase)) ** 6;
           actor.group.position.z += lunge * 0.18;
@@ -942,11 +1017,14 @@ export function createScene(canvas, options = {}) {
         } else if (actor.roleKey === 'harvester') {
           actor.group.rotation.z = Math.sin(t * 1.6 + phase) * 0.04;
         } else if (actor.roleKey === 'guardian') {
-          actor.group.rotation.y = Math.sin(t * 0.8 + phase) * 0.12;
+          roleYaw = Math.sin(t * 0.8 + phase) * 0.12;
         } else {
           actor.group.position.z -= 0.12;
-          actor.group.rotation.y = Math.sin(t * 1.1 + phase) * 0.18;
+          roleYaw = Math.sin(t * 1.1 + phase) * 0.18;
         }
+
+        // Orientation de base + rotation choisie par le joueur + oscillations du rôle.
+        actor.group.rotation.y = (actor.group.userData.baseYaw || 0) + (actor.group.userData.yaw || 0) + roleYaw;
 
         if (actor.labelEl) {
           actor.labelEl.style.opacity = '1';
