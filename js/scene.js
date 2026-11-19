@@ -1255,6 +1255,9 @@ export function createScene(canvas, options = {}) {
         const targetPos = leader.group.position.clone();
         targetPos.y += 1.2; // regarde un peu au-dessus du monstre
         controls.target.copy(targetPos);
+        // Place la caméra derrière et au-dessus du monstre pour qu'il reste dans le cadre.
+        const camOffset = new THREE.Vector3(0, 1.8, 5);
+        camera.position.copy(targetPos).add(camOffset);
         controls.update();
         lockElevation();
       }
