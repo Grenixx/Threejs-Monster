@@ -2279,23 +2279,19 @@ export class UI {
     const state = this.game.state;
     const slotsLeft = BALANCE.labSlots - state.monsters.length;
 
-    const cards = BODY_KEYS.map(bodyId => {
+    // On ne propose que les corps déjà possédés (déverrouillés via les expéditions).
+    const ownedBodyIds = state.unlocks.bodies || ['larve'];
+    const cards = ownedBodyIds.map(bodyId => {
       const body = BODIES[bodyId];
-      const unlocked = state.unlocks.bodies.includes(bodyId);
+      if (!body) return '';
       const canAfford = state.resources.biomass >= body.createCost.biomass &&
                         state.resources.shards >= body.createCost.shards;
-      const canUnlock = state.resources.biomass >= body.unlockCost.biomass &&
-                        state.resources.shards >= body.unlockCost.shards;
 
-      const action = unlocked
-        ? `<button class="btn tiny ${canAfford && slotsLeft > 0 ? 'primary' : 'ghost'}" type="button" data-modal-action="create-body" data-body="${bodyId}" ${canAfford && slotsLeft > 0 ? '' : 'disabled'}>Créer</button>`
-        : `<button class="btn tiny ${canUnlock ? 'violet' : 'ghost'}" type="button" data-modal-action="unlock-body" data-body="${bodyId}" ${canUnlock ? '' : 'disabled'}>Débloquer</button>`;
+      const action = `<button class="btn tiny ${canAfford && slotsLeft > 0 ? 'primary' : 'ghost'}" type="button" data-modal-action="create-body" data-body="${bodyId}" ${canAfford && slotsLeft > 0 ? '' : 'disabled'}>Créer</button>`;
 
-      const costs = unlocked
-        ? `<span>${icon('biomass', 10)} ${formatNumber(body.createCost.biomass)}</span>${body.createCost.shards ? `<span>${icon('shards', 10)} ${formatNumber(body.createCost.shards)}</span>` : ''}`
-        : `<span>${icon('biomass', 10)} ${formatNumber(body.unlockCost.biomass)}</span>${body.unlockCost.shards ? `<span>${icon('shards', 10)} ${formatNumber(body.unlockCost.shards)}</span>` : ''}`;
+      const costs = `<span>${icon('biomass', 10)} ${formatNumber(body.createCost.biomass)}</span>${body.createCost.shards ? `<span>${icon('shards', 10)} ${formatNumber(body.createCost.shards)}</span>` : ''}`;
 
-      return `<div class="body-card ${unlocked ? '' : 'locked'}">
+      return `<div class="body-card owned">
         <span class="body-avatar" style="--hue:${Math.round(body.hue * 360)}">${icon(body.icon, 20)}</span>
         <span class="body-main">
           <b>${esc(body.label)}</b>
@@ -2304,13 +2300,19 @@ export class UI {
         </span>
         <span class="body-actions">${action}</span>
       </div>`;
-    }).join('');
+    }).filter(Boolean).join('');
+
+    const empty = slotsLeft <= 0
+      ? '<div class="empty-state">${icon("skull", 24)}<b>Laboratoire plein</b>Libérez un emplacement avant d’en créer un nouveau.</div>'
+      : ownedBodyIds.length === 0
+        ? '<div class="empty-state">${icon("flask", 24)}<b>Aucun corps disponible</b>Revenez d’expédition pour en débloquer de nouveaux.</div>'
+        : '';
 
     this.openModal(`
       ${this.modalHead('Bain de culture', 'Nouveau spécimen', `${slotsLeft} emplacement(s) libre(s) sur ${BALANCE.labSlots}`)}
       <div class="modal-body">
-        ${cards}
-        <p class="tiny dim" style="margin-top:12px;line-height:1.5">Un nouveau corps débloque des sockets et des attributs de base. Les parties restent dans l’inventaire commun du laboratoire.</p>
+        ${empty || cards}
+        <p class="tiny dim" style="margin-top:12px;line-height:1.5">Choisissez un corps déjà récupéré en expédition. Les nouveaux corps s’obtiennent en récompense d’expédition.</p>
       </div>
       <div class="modal-actions">
         <button class="btn ghost" type="button" data-modal-action="close">Fermer</button>
