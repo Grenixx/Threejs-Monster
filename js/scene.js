@@ -627,10 +627,10 @@ export function createScene(canvas, options = {}) {
       roughness: 0.3
     });
 
-    for (let i = 0; i < 28; i++) {
+    for (let i = 0; i < 60; i++) {
       const prop = new THREE.Group();
-      const x = (rng() - 0.5) * 7.5;
-      const z = -6 + rng() * 7.2;
+      const x = (rng() - 0.5) * 10;
+      const z = -12 + rng() * 24;
       const scale = 0.12 + rng() * 0.34;
 
       if (zone.id === 'fosses') {
@@ -714,6 +714,9 @@ export function createScene(canvas, options = {}) {
    * @param {{zone:object, mode?:string, leaderId?:string}} opts
    */
   function setExpedition(monsters, opts = {}) {
+    userMovedCamera = false;
+    expeditionCamFollowTimer = 0;
+
     const list = (monsters || []).filter(Boolean);
     if (!list.length) return;
 
@@ -1235,9 +1238,23 @@ export function createScene(canvas, options = {}) {
         camZ = JOURNEY_START + progress * (JOURNEY_END - JOURNEY_START);
       }
 
-      // Camera : suit l'avancement, sauf si le joueur l'a deplacee ou si combat.
-      if (!userMovedCamera && !inCombat) {
-        controls.target.set(0, 0.95, camZ);
+      // Camera : centre sur le monstre du joueur (escouade), sauf si le joueur
+      // l'a deplacee (reactivation auto apres 2s sans interaction) ou si combat.
+      const leader = expeditionActors[0];
+      if (userMovedCamera) {
+        expeditionCamFollowTimer += dt * 1000;
+        if (expeditionCamFollowTimer >= 2000) {
+          userMovedCamera = false;
+          expeditionCamFollowTimer = 0;
+        }
+      } else {
+        expeditionCamFollowTimer = 0;
+      }
+
+      if (!userMovedCamera && !inCombat && leader) {
+        const targetPos = leader.group.position.clone();
+        targetPos.y += 1.2; // regarde un peu au-dessus du monstre
+        controls.target.copy(targetPos);
         controls.update();
         lockElevation();
       }
