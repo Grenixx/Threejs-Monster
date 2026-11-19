@@ -7,6 +7,7 @@ import {
 } from './monsterBuilder.js';
 import { generatePartDef, PART_TYPE_NAMES } from './partGenerator.js';
 import { mulberry32 } from './rng.js';
+import { monsterStats, rollLoot } from './economy.js';
 
 const MARKER_COLORS = {
   available: 0x8b7cff,
@@ -1313,13 +1314,6 @@ export function createScene(canvas, options = {}) {
 
       // Combat en cours ? l'escouade s'arrete et l'ennemi reste devant.
       let inCombat = expeditionCombat && expeditionCombat.active;
-      if (inCombat && now - expeditionCombat.start > 3000) {
-        inCombat = false;
-        expeditionCombat.active = false;
-        expeditionCombat = null;
-        expeditionCombat.foe.dying = true;
-        expeditionCombat.foe.dyingAt = now;
-      }
 
       let camZ;
       if (inCombat) {
@@ -1387,7 +1381,25 @@ export function createScene(canvas, options = {}) {
             if (foe.dying) continue;
             const dist = playerZ - foe.beatZ;
             if (dist < 3.5 && dist > -0.5) {
-              expeditionCombat = { active: true, foe, start: now };
+              const foeIndex = expeditionFoes.indexOf(foe);
+              const leader = expeditionActors[0];
+              const leaderStats = leader ? monsterStats(leader.monster) : { force: 5, resistance: 5 };
+              const foeMaxHp = Math.round(30 + foeIndex * 15 + (foe.beat && foe.beat.elite ? 20 : 0));
+              const playerMaxHp = Math.round(50 + (leaderStats.resistance || 0) * 4);
+              expeditionCombat = {
+                active: true,
+                foe,
+                start: now,
+                foeHp: foeMaxHp,
+                foeMaxHp,
+                playerHp: playerMaxHp,
+                playerMaxHp,
+                combatLog: [],
+                turn: 'player',
+                combatStarted: false,
+                combatRng: mulberry32(now)
+              };
+              expeditionCombat.combatLog.push(`Un ${foe.beat.name}${foe.beat.elite ? ' élite' : ''} bloque la route !`);
               break;
             }
           }
@@ -1463,6 +1475,70 @@ export function createScene(canvas, options = {}) {
     renderer.render(scene, camera);
   }
 
+  // ------------------------------------------------ COMBAT D'EXPEDITION ----
+  /**
+   * Action du joueur pendant un combat d'expédition.
+   * @param {string} action - 'attack' ou 'flee'
+   * @returns {Object} Résultat du combat
+   */
+  function expeditionCombatAction(action) {
+    if (!expeditionCombat || !expeditionCombat.active) return { result: 'none' };
+    const { foe, combatLog, combatRng } = expeditionCombat;
+    const leader = expeditionActors[0];
+    const leaderStats = leader ? monsterStats(leader.monster) : { force: 5, resistance: 5 };
+    const rng = combatRng || mulberry32(Date.now());
+
+    if (action === 'flee') {
+      expeditionCombat.active = false;
+      expeditionCombat = null;
+      return { result: 'flee' };
+    }
+
+    if (action === 'attack') {
+      // Dégâts du joueur
+      const playerDmg = Math.round((leaderStats.force || 5) * 1.2 + rng() * 10);
+      expeditionCombat.foeHp -= playerDmg;
+      combatLog.push(`Vous infligez ${playerDmg} dégâts à ${foe.beat.name}.`);
+
+      if (expeditionCombat.foeHp <= 0) {
+        // Victoire : l'ennemi meurt, butin et XP
+        expeditionCombat.active = false;
+        expeditionCombat.foe.dying = true;
+        expeditionCombat.foe.dyingAt = now;
+        const zone = currentZone || { id: 'fosses', biomass: 160, xp: 15 };
+        const loot = rollLoot(zone, leaderStats, rng, 'expedition:combat', 1);
+        expeditionCombat.loot = loot;
+        expeditionCombat.xp = zone.xp;
+        expeditionCombat.biomass = zone.biomass;
+        expeditionCombat.result = 'victory';
+        return { result: 'victory', loot, xp: zone.xp, biomass: zone.biomass, damage: playerDmg };
+      }
+
+      // Riposte de l'ennemi
+      const foeDmg = Math.round((5 + expeditionCombat.foeIndex * 5) * 0.8 + rng() * 8);
+      expeditionCombat.playerHp -= foeDmg;
+      combatLog.push(`L'ennemi vous inflige ${foeDmg} dégâts.`);
+
+      if (expeditionCombat.playerHp <= 0) {
+        // Défaite : fin de l'expédition
+        expeditionCombat.active = false;
+        expeditionCombat = null;
+        return { result: 'defeat', damage: foeDmg };
+      }
+
+      return { result: 'continue', damage: playerDmg, foeDamage: foeDmg };
+    }
+
+    return { result: 'none' };
+  }
+
+  /**
+   * Retourne l'état actuel du combat pour l'UI.
+   */
+  function getExpeditionCombat() {
+    return expeditionCombat;
+  }
+
   function start() {
     resize();
     const loop = () => {
@@ -1489,6 +1565,8 @@ export function createScene(canvas, options = {}) {
     isExpeditionMode: () => expeditionMode,
     getExpeditionActors: () => expeditionActors,
     getExpeditionZone: () => currentZone,
-    floorUniforms
+    floorUniforms,
+    expeditionCombatAction,
+    getExpeditionCombat
   };
 }

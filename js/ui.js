@@ -1582,6 +1582,23 @@ export class UI {
       case 'recall-expedition':
         this.recallOne(el.dataset.id);
         break;
+      case 'combat-attack': {
+        const result = this.scene.expeditionCombatAction('attack');
+        if (result.result === 'victory' || result.result === 'defeat' || result.result === 'flee') {
+          this.closeModal();
+          if (result.result === 'victory') this.openClaimRewardModal(result);
+          else if (result.result === 'defeat') this.toast('Votre spécimen a été vaincu au combat.', 'warn');
+        } else {
+          this.openCombatModal(this.scene.getExpeditionCombat());
+        }
+        break;
+      }
+      case 'combat-flee': {
+        this.scene.expeditionCombatAction('flee');
+        this.closeModal();
+        this.toast('Vous avez fui le combat.', 'info');
+        break;
+      }
       case 'claim-all':
         this.claimAll();
         break;
@@ -1693,6 +1710,37 @@ export class UI {
       return;
     }
     this.openClaimRewardModal(result);
+  }
+
+  /** Modal de combat d'expédition. */
+  openCombatModal(combat) {
+    const { foe, foeHp, foeMaxHp, playerHp, playerMaxHp, combatLog } = combat;
+    const foePct = foeMaxHp > 0 ? Math.round((foeHp / foeMaxHp) * 100) : 0;
+    const playerPct = playerMaxHp > 0 ? Math.round((playerHp / playerMaxHp) * 100) : 100;
+    const logsHtml = combatLog.slice(-5).map(l => `<div class="combat-log">${esc(l)}</div>`).join('');
+
+    this.openModal(`
+      ${this.modalHead('Combat', foe.beat.name, foe.beat.elite ? 'ÉLITE' : '')}
+      <div class="modal-body">
+        <div class="combat-hp">
+          <div class="hp-row">
+            <span class="hp-name">${esc(foe.beat.name)}</span>
+            <span class="hp-val">${foeHp} / ${foeMaxHp}</span>
+          </div>
+          <div class="hp-bar"><div class="hp-fill" style="width:${foePct}%;background:var(--danger)"></div></div>
+          <div class="hp-row">
+            <span class="hp-name">Vous</span>
+            <span class="hp-val">${playerHp} / ${playerMaxHp}</span>
+          </div>
+          <div class="hp-bar"><div class="hp-fill" style="width:${playerPct}%;background:var(--mint)"></div></div>
+        </div>
+        <div class="combat-log">${logsHtml || '<div class="combat-log">Le combat commence...</div>'}</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" type="button" data-action="combat-attack">Attaquer</button>
+        <button class="btn ghost" type="button" data-action="combat-flee">Fuir</button>
+      </div>
+    `);
   }
 
   /** Modal de récompense quand on récupère une expédition terminée. */
@@ -2013,6 +2061,11 @@ export class UI {
       this.pendingPop = null;
       this.pendingInstant = false;
       this.scene.clearSelection();
+      const combat = this.scene.getExpeditionCombat();
+      if (combat && combat.active && !combat.combatStarted) {
+        combat.combatStarted = true;
+        this.openCombatModal(combat);
+      }
       return;
     }
 

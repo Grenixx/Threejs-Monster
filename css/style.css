@@ -2109,3 +2109,46 @@ button:focus-visible, [role="button"]:focus-visible, .tab:focus-visible {
   font-family: sans-serif;
   z-index: 999;
 }
+
+/* Combat d'expédition */
+.combat-hp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.hp-row {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.hp-name { color: var(--muted); }
+.hp-val { font-weight: 600; color: var(--text); }
+.hp-bar {
+  height: 8px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.hp-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.combat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  background: rgba(6, 5, 12, 0.4);
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
