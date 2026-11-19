@@ -4,7 +4,9 @@ import { Game } from '../js/state.js';
 import {
   monsterStats, monsterPower, capacityOf, autoPlacements, resolveExpedition,
   fairPrice, monsterValue, generatePart, applyXp, nextLevelXp,
-  groupExpeditionRates, expeditionRates, createMonster
+  groupExpeditionRates, expeditionRates, createMonster,
+  generateMonsterName, generateResearcherName, generateRandomBeast,
+  expeditionBeats, expeditionJournal, deriveRole
 } from '../js/economy.js';
 import { ZONE_BY_ID, BALANCE } from '../js/data.js';
 import {
@@ -324,6 +326,141 @@ test('escouade : rendement supérieur et XP partagée', () => {
   assert.equal(claim.monsters.length, 3);
   assert.ok(leader.xp > 0 && second.xp > 0 && third.xp > 0);
   assert.equal(game.state.expeditions.length, 0);
+});
+
+test('noms de monstres générés sont originaux et déterministes', () => {
+  // Même graine → même nom (déterminisme)
+  assert.equal(generateMonsterName(() => 0.5), generateMonsterName(() => 0.5));
+  // Graines différentes → noms différents
+  const n1 = generateMonsterName(() => 0.1);
+  const n2 = generateMonsterName(() => 0.9);
+  assert.notEqual(n1, n2, 'deux graines différentes devraient donner des noms différents');
+  // Format : majuscule + lettres
+  for (const n of [n1, n2]) {
+    assert.ok(/^[A-Z][a-zéèàâêîôûëïü]+([-'’][a-zA-Z]+)?$/.test(n), `nom invalide: ${n}`);
+  }
+});
+
+test('nom du joueur (chercheur) est aléatoire et original', () => {
+  const n1 = generateResearcherName();
+  const n2 = generateResearcherName();
+  assert.ok(/^(Chercheur|Docteur|Spécimen|Sujet|Érudit|Nécromancien|Alchimiste) /.test(n1));
+  assert.ok(/^(Chercheur|Docteur|Spécimen|Sujet|Érudit|Nécromancien|Alchimiste) /.test(n2));
+  assert.notEqual(n1, n2, 'deux joueurs ne devraient pas avoir le même nom');
+});
+
+test('monstre aléatoire par biome est déterministe et valide', () => {
+  const zone = ZONE_BY_ID.fosses;
+  const rng1 = () => 0.42;
+  const rng2 = () => 0.42;
+  const b1 = generateRandomBeast(rng1, zone);
+  const b2 = generateRandomBeast(rng2, zone);
+  assert.deepEqual(b1, b2, 'même graine = même monstre');
+  assert.ok(b1.id && b1.name && b1.shape && typeof b1.elite === 'boolean');
+  assert.ok(['worm', 'eye', 'beast', 'roach'].includes(b1.shape));
+  assert.ok(b1.hue >= 0 && b1.hue <= 1);
+});
+
+test('expédition beats sont déterministes et bien bornés', () => {
+  const members = [{ uid: 'm1', name: 'A' }, { uid: 'm2', name: 'B' }];
+  const zone = ZONE_BY_ID.fosses;
+  const duration = 60;
+  const beats1 = expeditionBeats(members, zone, 999, duration);
+  const beats2 = expeditionBeats(members, zone, 999, duration);
+  assert.deepEqual(beats1, beats2, 'même graine = mêmes beats');
+  assert.ok(beats1.length >= 4 && beats1.length <= 7, 'entre 4 et 7 rencontres');
+  for (const b of beats1) {
+    assert.ok(b.at > 0 && b.at < 1, `at doit être dans ]0,1[: ${b.at}`);
+    assert.ok(['enemy', 'loot', 'relic'].includes(b.kind), `kind invalide: ${b.kind}`);
+    if (b.kind === 'enemy') {
+      assert.ok(b.beast && b.beast.name, 'un ennemi a une bête');
+      assert.ok(members.some(m => m.uid === b.targetUid), 'cible est un membre');
+    } else {
+      assert.ok(typeof b.amount === 'number' && b.amount > 0);
+    }
+  }
+});
+
+test("journal d'expédition est horodaté et cohérent", () => {
+  const members = [{ uid: 'm1', name: 'A', currentHp: 50, maxHp: 50 }];
+  const zone = ZONE_BY_ID.fosses;
+  const duration = 60;
+  const now = Date.now();
+  const startedAt = now - duration * 1000 / 2;
+  const exp = {
+    id: 'exp_test',
+    startedAt,
+    duration,
+    beats: [
+      { id: 'b0', at: 0.2, kind: 'enemy', beast: { name: 'TestBête', shape: 'eye', elite: false }, targetUid: 'm1', amount: 0 },
+      { id: 'b1', at: 0.5, kind: 'loot', beast: null, targetUid: 'm1', amount: 20 },
+      { id: 'b2', at: 0.9, kind: 'relic', beast: null, targetUid: 'm1', amount: 0 }
+    ]
+  };
+  const lines = expeditionJournal(exp, members, zone, now);
+  assert.ok(lines.length >= 2, 'au moins le départ + progression');
+  assert.equal(lines[0].kind, 'start');
+  assert.ok(lines[0].text.includes(zone.name));
+  assert.ok(lines.some(l => l.kind === 'threat'), 'une menace apparaît');
+  assert.ok(lines.some(l => l.kind === 'loot'), 'un butin apparaît');
+  for (let i = 1; i < lines.length; i++) {
+    assert.ok(lines[i].t >= lines[i - 1].t, 'lignes triées par temps');
+  }
+});
+
+test('rôle dérivé des parties équipées', () => {
+  const empty = { attachments: [], role: 'raider' };
+  assert.equal(deriveRole(empty), 'raider', 'garde le rôle stocké sans équipement');
+
+  const harv = {
+    attachments: [
+      { part: { stats: { perception: 10, esoterisme: 5 } } },
+      { part: { stats: { perception: 5 } } }
+    ]
+  };
+  assert.equal(deriveRole(harv), 'harvester', 'perception = récolteur');
+
+  const raid = {
+    attachments: [
+      { part: { stats: { force: 10, vitesse: 5 } } }
+    ]
+  };
+  assert.equal(deriveRole(raid), 'raider', 'force = pilleur');
+
+  const guard = {
+    attachments: [
+      { part: { stats: { resistance: 12 } } }
+    ]
+  };
+  assert.equal(deriveRole(guard), 'guardian', 'résistance = gardien');
+
+  const scout = {
+    attachments: [
+      { part: { stats: { vitesse: 12, perception: 1 } } }
+    ]
+  };
+  assert.equal(deriveRole(scout), 'scout', 'vitesse = éclaireur');
+});
+
+test('placement des monstres sans clipping (largeurs respectées)', () => {
+  const margin = 0.14;
+  const monsters = [
+    { width: 1.0 }, { width: 1.5 }, { width: 0.8 }
+  ];
+  let totalWidth = 0;
+  monsters.forEach((m, i) => { totalWidth += m.width; if (i < monsters.length - 1) totalWidth += margin; });
+  let cursorX = -totalWidth / 2;
+  const positions = [];
+  monsters.forEach((m) => {
+    cursorX += m.width / 2;
+    positions.push(cursorX);
+    cursorX += m.width / 2 + margin;
+  });
+  for (let i = 0; i < positions.length - 1; i++) {
+    const gap = positions[i + 1] - positions[i];
+    const minGap = (monsters[i].width + monsters[i + 1].width) / 2 + margin;
+    assert.ok(gap >= minGap - 0.001, `monstres ${i} et ${i+1} se chevauchent: gap=${gap} min=${minGap}`);
+  }
 });
 
 console.log(`\n${passed} test(s) passé(s).`);

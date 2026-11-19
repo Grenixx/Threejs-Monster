@@ -635,7 +635,7 @@ export function generateRandomBeast(rng, zone) {
   const shape = BEAST_SHAPES[Math.floor(rng() * BEAST_SHAPES.length)];
   const name = names[Math.floor(rng() * names.length)];
   return {
-    id: `beast-${uid('b')}`,
+    id: `beast-${Math.floor(rng() * 999999)}`,
     name,
     shape,
     elite: rng() < 0.15,
