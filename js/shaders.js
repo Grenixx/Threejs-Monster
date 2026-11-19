@@ -21,7 +21,7 @@ export const floorVert = /* glsl */`
 
   void main() {
     vec4 wp = modelMatrix * vec4(position, 1.0);
-    float disp = noise(wp.xz * 0.6) * 0.5;
+    float disp = noise(wp.xz * 1.0) * 1.5;
     wp.y += disp;
     vWorldPos = wp.xyz;
     // Normale approximée : gradient du noise sur XZ
