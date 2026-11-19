@@ -533,8 +533,8 @@ export function createScene(canvas, options = {}) {
     const variant = (rng() - 0.5) * 0.12;
     recolorMesh(group, biomeHue, variant);
 
-    // Taille selon élite.
-    const scale = beat.elite ? 1.25 : 1;
+    // Taille selon élite (plus petits que les monstres joueurs).
+    const scale = beat.elite ? 0.7 : 0.5;
     group.scale.setScalar(scale);
     group.updateMatrixWorld(true);
 
