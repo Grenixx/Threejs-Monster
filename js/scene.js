@@ -538,9 +538,14 @@ export function createScene(canvas, options = {}) {
     group.scale.setScalar(scale);
     group.updateMatrixWorld(true);
 
+    // Le monstre doit reposer sur le sol (y=0) : on remonte son centre de
+    // la demi-hauteur de sa bounding box pour éviter qu'il ne clip dans le sol.
+    const bbox = new THREE.Box3().setFromObject(group);
+    const baseY = -bbox.min.y;
+
     return {
       group,
-      baseY: 0,
+      baseY,
       baseScale: scale,
       phase: expeditionFoes.length * 1.9,
       beat,
