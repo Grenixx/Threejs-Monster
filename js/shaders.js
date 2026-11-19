@@ -1,8 +1,35 @@
 export const floorVert = /* glsl */`
   varying vec3 vWorldPos;
+  varying vec3 vNormal;
+  
+  float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+  
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
   void main() {
     vec4 wp = modelMatrix * vec4(position, 1.0);
+    float disp = noise(wp.xz * 0.6) * 0.5;
+    wp.y += disp;
     vWorldPos = wp.xyz;
+    // Normale approximée : gradient du noise sur XZ
+    float nx = noise((wp.xz + vec2(0.02, 0.0)) * 0.6) * 0.5;
+    float ny = noise((wp.xz + vec2(-0.02, 0.0)) * 0.6) * 0.5;
+    float nz = noise((wp.xz + vec2(0.0, 0.02)) * 0.6) * 0.5;
+    float nw = noise((wp.xz + vec2(0.0, -0.02)) * 0.6) * 0.5;
+    vNormal = normalize(vec3((nx - ny) * 50.0, 1.0, (nz - nw) * 50.0));
     gl_Position = projectionMatrix * viewMatrix * wp;
   }
 `;
@@ -10,6 +37,7 @@ export const floorVert = /* glsl */`
 export const floorFrag = /* glsl */`
   precision mediump float;
   varying vec3 vWorldPos;
+  varying vec3 vNormal;
   uniform vec3 uGrid, uBg, uFogColor;
   uniform float uTime, uFogDensity;
 
@@ -24,12 +52,18 @@ export const floorFrag = /* glsl */`
     float dist = length(vWorldPos.xz);
     float fade = smoothstep(25.0, 1.0, dist);
 
-    vec3 color = uBg;
-    color = mix(color, uGrid, line * fade);
+    // Coloration selon la hauteur pour bien voir les collines
+    float height = smoothstep(0.0, 1.0, vWorldPos.y * 2.0 + 0.5);
+    vec3 color = mix(uBg, uGrid, line * fade);
+    color = mix(color, uBg + vec3(0.1, 0.15, 0.2), height * 0.6);
 
     // Brouillard appliqué au sol (s'adapte à la couleur du monstre)
     float fogFactor = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
     color = mix(color, uFogColor, fogFactor);
+
+    // Reflet subtil selon la normale
+    float rim = pow(0.6 - dot(vNormal, vec3(0.0, 1.0, 0.0)), 3.0);
+    color += vec3(0.05, 0.08, 0.12) * rim * 0.5;
 
     gl_FragColor = vec4(color, 1.0);
   }

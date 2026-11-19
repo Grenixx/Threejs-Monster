@@ -494,6 +494,65 @@ export function createScene(canvas, options = {}) {
     };
   }
 
+
+  // ------------------------------------------------ PROJECTION VECTORIELLE SUR LE SOL ----
+  // Reproduit exactement le noise du shader floorVert pour calculer la hauteur
+  // et la normale du sol à n'importe quel point (x, z). Les objets s'y posent
+  // donc réellement sur les collines.
+  function groundHash2(x, y) {
+    x = (x * 123.34) % 1;
+    y = (y * 456.21) % 1;
+    const d = x * (x + 45.32) + y * (y + 45.32);
+    return ((x + d) * (y + d)) % 1;
+  }
+
+  function groundNoise(x, y) {
+    const i = { x: Math.floor(x), y: Math.floor(y) };
+    const f = { x: x - i.x, y: y - i.y };
+    const u = f.x * f.x * (3.0 - 2.0 * f.x);
+    const v = f.y * f.y * (3.0 - 2.0 * f.y);
+    const a = groundHash2(i.x, i.y);
+    const b = groundHash2(i.x + 1, i.y);
+    const c = groundHash2(i.x, i.y + 1);
+    const d = groundHash2(i.x + 1, i.y + 1);
+    return (a + (b - a) * u) + ((c + (d - c) * u) - (a + (b - a) * u)) * v;
+  }
+
+  /** Hauteur du sol à (x, z), identique au vertex shader du sol. */
+  function groundHeight(x, z) {
+    return groundNoise(x * 0.6, z * 0.6) * 0.5;
+  }
+
+  /** Normale du sol à (x, z), identique au vertex shader du sol. */
+  function groundNormal(x, z) {
+    const eps = 0.02;
+    const hx = groundHeight(x + eps, z);
+    const hxm = groundHeight(x - eps, z);
+    const hz = groundHeight(x, z + eps);
+    const hzm = groundHeight(x, z - eps);
+    const nx = (hx - hxm) / (2 * eps);
+    const nz = (hz - hzm) / (2 * eps);
+    const len = Math.sqrt(nx * nx + 1 + nz * nz);
+    return new THREE.Vector3(-nx / len, 1 / len, -nz / len);
+  }
+
+  /** Place un groupe sur le sol : position y = hauteur du sol + yOffset, rotation alignée sur la normale. */
+  function placeOnGround(group, x, z, keepYaw = 0, yOffset = 0) {
+    const pos = new THREE.Vector3(x, groundHeight(x, z) + yOffset, z);
+    const nrm = groundNormal(x, z);
+    group.position.copy(pos);
+    const q = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0), nrm
+    );
+    if (keepYaw) {
+      const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), keepYaw);
+      q.premultiply(qy);
+    }
+    group.quaternion.copy(q);
+    group.updateMatrixWorld();
+    return { pos, nrm };
+  }
+
   /**
    * Créature d'expédition : assemblage de primitives, teinté par la zone.
    * Les formes sont volontairement simples (silhouette lisible en pixel-art).
@@ -580,12 +639,12 @@ export function createScene(canvas, options = {}) {
       const kind = i % 4;
       if (kind === 0) {
         const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 * scale, 0), rockMat);
-        rock.position.set(x, 0.15 * scale, z);
+        rock.position.set(0, 0.15 * scale, 0);
         rock.scale.set(1, 0.6 + rng() * 0.5, 1);
         prop.add(rock);
       } else if (kind === 1) {
         const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.3 * scale, 0), rockMat);
-        crystal.position.set(x, 0.15 * scale, z);
+        crystal.position.set(0, 0.15 * scale, 0);
         crystal.scale.y = 1.4 + rng() * 1.2;
         prop.add(crystal);
       } else if (kind === 2) {
@@ -599,10 +658,11 @@ export function createScene(canvas, options = {}) {
       } else {
         const bone = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.4, 4, 8), rockMat);
         bone.rotation.z = Math.PI / 2;
-        bone.position.set(x, 0.2 * scale, z);
+        bone.position.set(0, 0.2 * scale, 0);
         prop.add(bone);
       }
 
+      placeOnGround(prop, x, z, 0, 0);
       prop.userData.travel = 0;
       prop.userData.spin = (rng() - 0.5) * 0.8;
       prop.userData.baseY = 0;
@@ -683,8 +743,8 @@ export function createScene(canvas, options = {}) {
         }
       }
 
-      prop.position.set(x, 0, z);
-      prop.userData.travel = 0.35 + rng() * 0.8;
+      placeOnGround(prop, x, z);
+      prop.userData.travel = 0;
       prop.userData.spin = (rng() - 0.5) * 1.2;
       prop.userData.baseY = 0;
       group.add(prop);
@@ -781,9 +841,9 @@ export function createScene(canvas, options = {}) {
     prepared.forEach((p) => {
       const { actor, monster, index } = p;
       cursorX += p.width / 2;
-      actor.position.set(cursorX, 0.02 + p.baseY, 0);
-      actor.rotation.y = (index - (prepared.length - 1) / 2) * 0.12;
-      actor.userData.baseYaw = actor.rotation.y;
+      const yaw = (index - (prepared.length - 1) / 2) * 0.12;
+      placeOnGround(actor, cursorX, 0, yaw, p.baseY);
+      actor.userData.baseYaw = yaw;
       actor.userData.yaw = 0;
       cursorX += p.width / 2 + margin;
 
@@ -833,7 +893,8 @@ export function createScene(canvas, options = {}) {
       const lane = (expeditionFoes.length % 2 === 0 ? -1 : 1) * (0.35 + (expeditionFoes.length % 3) * 0.3);
       foe.laneX = lane;
       foe.beatZ = JOURNEY_START + beat.at * (JOURNEY_END - JOURNEY_START);
-      foe.group.position.set(foe.laneX, 0, foe.beatZ);
+      foe.groundY = groundHeight(foe.laneX, foe.beatZ);
+      placeOnGround(foe.group, foe.laneX, foe.beatZ, 0, foe.baseY);
       foe.beat = beat;
       foe.group.visible = false;
       foe.labelEl = createFoeLabel(beat.beast);
@@ -1308,7 +1369,7 @@ export function createScene(canvas, options = {}) {
           if (expeditionCombat && expeditionCombat.foe === foe && expeditionCombat.active) {
             // En combat : l'ennemi reste devant le joueur.
             foe.group.visible = true;
-            foe.group.position.set(foe.laneX, foe.baseY, foe.beatZ);
+            foe.group.position.set(foe.laneX, foe.groundY + foe.baseY, foe.beatZ);
             foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25;
             foe.group.scale.setScalar(foe.baseScale);
           } else if (foe.dying) {
@@ -1316,7 +1377,7 @@ export function createScene(canvas, options = {}) {
             const k = Math.min(1, (now - foe.dyingAt) / 650);
             foe.group.visible = k < 1;
             foe.group.position.z = foe.beatZ + k * -7;
-            foe.group.position.y = foe.baseY - k * 0.22;
+            foe.group.position.y = foe.groundY + foe.baseY - k * 0.22;
             foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25 * (1 - k);
             foe.group.scale.setScalar(foe.baseScale * (1 - k * 0.55));
           } else if (!expeditionCombat || !expeditionCombat.active) {
@@ -1326,7 +1387,7 @@ export function createScene(canvas, options = {}) {
             if (approaching) {
               const k = Math.min(1, Math.max(0, (6 - dist) / 8));
               foe.group.visible = true;
-              foe.group.position.set(foe.laneX, foe.baseY, foe.beatZ);
+              foe.group.position.set(foe.laneX, foe.groundY + foe.baseY, foe.beatZ);
               foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25;
               foe.group.scale.setScalar(foe.baseScale * (0.55 + 0.45 * k));
             } else if (foe.group.visible) {
