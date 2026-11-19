@@ -132,7 +132,7 @@ function surfaceAnchors(bodyMesh, count) {
 // =============================================================
 // COULEURS
 // =============================================================
-function recolorMesh(mesh, baseHue, variant) {
+export function recolorMesh(mesh, baseHue, variant) {
   const mainHue = (baseHue + variant + 1) % 1;
   const mainColor = new THREE.Color().setHSL(mainHue, 0.55, 0.45);
   const accentColor = new THREE.Color().setHSL((mainHue + 0.08) % 1, 0.72, 0.56);

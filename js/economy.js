@@ -90,8 +90,40 @@ export function applyXp(monster, amount) {
   return gained;
 }
 
+/**
+ * Déduit le rôle d'un monstre à partir des parties qu'il a équipées.
+ * Chaque rôle correspond à la stat dominante de son équipement :
+ *  - harvester : perception / esoterisme (trouver, récolter)
+ *  - raider    : force / vitesse (attaquer, piller)
+ *  - guardian  : résistance (encaisser, défendre)
+ *  - scout     : vitesse (rapide, léger)
+ * Si aucun équipement ne se distingue, le monstre garde son rôle stocké
+ * (fallback harvester).
+ */
+export function deriveRole(monster) {
+  const stats = monsterStats(monster || {});
+  const score = {
+    harvester: (stats.perception || 0) * 1.5 + (stats.esoterisme || 0),
+    raider:    (stats.force || 0) * 1.5 + (stats.vitesse || 0),
+    guardian:  (stats.resistance || 0) * 1.5 + (stats.force || 0) * 0.5,
+    scout:     (stats.vitesse || 0) * 1.5 + (stats.perception || 0) * 0.5
+  };
+  let best = 'harvester';
+  let bestScore = score.harvester;
+  for (const [key, value] of Object.entries(score)) {
+    if (value > bestScore + 1e-9) {
+      best = key;
+      bestScore = value;
+    }
+  }
+  // Aucun équipement marquant : on ne force pas un rôle par l'équipement.
+  const hasParts = (monster?.attachments || []).length > 0;
+  if (!hasParts && monster?.role && ROLES[monster.role]) return monster.role;
+  return best;
+}
+
 export function roleOf(monster) {
-  return ROLES[monster?.role] || ROLES.harvester;
+  return ROLES[deriveRole(monster)] || ROLES.harvester;
 }
 
 export function rollLoot(zone, stats, rng, origin = 'expedition', lootBonus = 1) {

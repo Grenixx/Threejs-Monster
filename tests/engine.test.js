@@ -260,18 +260,38 @@ test('gardien : défense et interdiction de partir', () => {
   assert.equal(start.ok, false);
 });
 
-test('rôles : récolteur vs pilleur', () => {
+test('rôles : récolteur vs pilleur (dérivé des parties)', () => {
   const game = makeGameShell();
   const monster = game.state.monsters[0];
   const zone = ZONE_BY_ID.fosses;
-  monster.role = 'harvester';
+
+  // Récolteur : parties perception + ésotérisme
+  monster.attachments = [
+    { uid: 'a', part: generatePart('eye', 'common', 1), socket: 0 },
+    { uid: 'b', part: generatePart('crystal', 'common', 2), socket: 1 }
+  ];
   const harvest = expeditionRates(monster, zone);
-  monster.role = 'raider';
+
+  // Pilleur : parties force + vitesse
+  monster.attachments = [
+    { uid: 'c', part: generatePart('claw', 'common', 3), socket: 0 },
+    { uid: 'd', part: generatePart('horn', 'common', 4), socket: 1 }
+  ];
   const raid = expeditionRates(monster, zone);
-  assert.ok(harvest.biomass > raid.biomass);
-  assert.ok(harvest.duration <= raid.duration);
+
+  assert.ok(harvest.biomass > raid.biomass, 'le récolteur ramène plus de biomasse');
+  assert.ok(harvest.duration <= raid.duration, 'le récolteur est au moins aussi rapide');
+
+  // Attaque : le pilleur frappe plus fort (multiplicateur de rôle + stats)
+  monster.attachments = [
+    { uid: 'e', part: generatePart('claw', 'common', 7), socket: 0 },
+    { uid: 'f', part: generatePart('horn', 'common', 8), socket: 1 }
+  ];
   const a = attackerSnapshot(monster);
-  monster.role = 'harvester';
+  monster.attachments = [
+    { uid: 'g', part: generatePart('eye', 'common', 9), socket: 0 },
+    { uid: 'h', part: generatePart('crystal', 'common', 10), socket: 1 }
+  ];
   const b = attackerSnapshot(monster);
   assert.ok(a.attack > b.attack, 'le pilleur attaque plus fort');
 });

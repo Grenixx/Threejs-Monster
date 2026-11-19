@@ -3,7 +3,7 @@
 // =============================================================
 
 import { STAT_KEYS, ROLES, ROLE_KEYS, LAB_DEFENSES } from './data.js';
-import { monsterStats, clamp } from './economy.js';
+import { monsterStats, clamp, deriveRole } from './economy.js';
 
 export const RAID = {
   duration: 150,
@@ -23,7 +23,7 @@ export const RAID = {
 };
 
 function roleOf(monster) {
-  return ROLES[monster?.role] || ROLES.harvester;
+  return ROLES[deriveRole(monster)] || ROLES.harvester;
 }
 
 /** Puissance d'attaque d'un monstre partant en razzia. */
@@ -93,7 +93,7 @@ export function attackerSnapshot(monster) {
     level,
     stats,
     role: role.label,
-    roleKey: monster.role || 'harvester',
+    roleKey: deriveRole(monster),
     attack: attackScore(stats, level, role.raid),
     capacity: cargoCapacity(stats, level, role.cargo)
   };

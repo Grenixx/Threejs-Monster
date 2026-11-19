@@ -1,8 +1,30 @@
 export const floorVert = /* glsl */`
   varying vec3 vWorldPos;
+  varying float vDisp;
+  
+  float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+  
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
   void main() {
     vec4 wp = modelMatrix * vec4(position, 1.0);
+    float disp = noise(wp.xz * 0.8 + uTime * 0.15) * 0.06;
+    wp.y += disp;
     vWorldPos = wp.xyz;
+    vDisp = disp;
     gl_Position = projectionMatrix * viewMatrix * wp;
   }
 `;
@@ -25,6 +47,8 @@ export const floorFrag = /* glsl */`
     float fade = smoothstep(25.0, 1.0, dist);
 
     vec3 color = uBg;
+    // crêtes du déplacement un peu plus claires
+    color = mix(color, color + vec3(0.15, 0.18, 0.22), vDisp * 1.6);
     color = mix(color, uGrid, line * fade);
 
     // Brouillard appliqué au sol (s'adapte à la couleur du monstre)

@@ -577,23 +577,6 @@ export class UI {
       ${raid ? this.activeRaidCard(raid) : exploring ? this.activeExpeditionCard(exploring) : ''}
 
       <section class="section">
-        <div class="row between" style="margin-bottom:7px">
-          <p class="eyebrow">Rôle</p>
-          <span class="tiny dim mono">${away ? 'EN MISSION' : 'MODIFIABLE'}</span>
-        </div>
-        <div class="role-grid">
-          ${ROLE_KEYS.map(key => {
-            const r = ROLES[key];
-            return `<button type="button" class="role-card ${monster.role === key ? 'active' : ''}" style="--role-color:${r.color}" data-action="set-role" data-role="${key}" ${away ? 'disabled' : ''}>
-              ${icon(r.icon, 15)}
-              <b>${r.label}</b>
-              <span>${r.short}</span>
-            </button>`;
-          }).join('')}
-        </div>
-        <p class="tiny dim" style="margin-top:7px;line-height:1.45">${esc(role.desc)}</p>
-      </section>
-
       <section class="section">
         <div class="row between" style="margin-bottom:8px">
           <p class="eyebrow">Attributs</p>
@@ -1519,12 +1502,7 @@ export class UI {
       case 'open-feed':
         this.openFeedModal();
         break;
-      case 'set-role': {
-        if (!monster) return;
-        const result = game.setRole(monster.uid, el.dataset.role);
-        if (!result.ok) this.toast(result.reason, 'warn');
-        break;
-      }
+
       case 'help':
         this.openHelpModal();
         break;

@@ -620,20 +620,6 @@ export class Game {
     return { ok: true, monster };
   }
 
-  setRole(monsterId, role) {
-    if (!ROLE_KEYS.includes(role)) return { ok: false, reason: 'Rôle inconnu.' };
-    const monster = this.state.monsters.find(m => m.uid === monsterId);
-    if (!monster) return { ok: false, reason: 'Spécimen introuvable.' };
-    if (this.isAway(monsterId)) return { ok: false, reason: 'Impossible de changer de rôle en mission.' };
-    if (monster.role === role) return { ok: true, role };
-    monster.role = role;
-    const def = ROLES[role];
-    logEntry(this.state, `${monster.name} devient ${def.label.toLowerCase()}.`, 'role');
-    this.emitEvent('toast', { text: `${monster.name} · ${def.label}`, kind: 'success' });
-    this.commit({ reason: 'role' });
-    return { ok: true, role, monster };
-  }
-
   // ----- expéditions -----
   activeExpedition(monsterId) {
     return this.state.expeditions.find(e =>
