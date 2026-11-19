@@ -1567,7 +1567,7 @@ export function createScene(canvas, options = {}) {
     getExpeditionActors: () => expeditionActors,
     getExpeditionZone: () => currentZone,
     floorUniforms,
-    expeditionCombatAction,
+    resolveExpeditionCombat,
     getExpeditionCombat
   };
 }
