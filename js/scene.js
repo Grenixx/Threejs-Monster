@@ -233,7 +233,7 @@ export function createScene(canvas, options = {}) {
     uniforms: floorUniforms,
     depthWrite: true
   });
-  const floorGeo = new THREE.PlaneGeometry(200, 200);
+  const floorGeo = new THREE.PlaneGeometry(200, 200, 128, 128);
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0;
@@ -528,14 +528,14 @@ export function createScene(canvas, options = {}) {
   /** Normale du sol à (x, z), identique au vertex shader du sol. */
   function groundNormal(x, z) {
     const eps = 0.02;
-    const hx = groundHeight(x + eps, z);
+    const hxp = groundHeight(x + eps, z);
     const hxm = groundHeight(x - eps, z);
-    const hz = groundHeight(x, z + eps);
+    const hzp = groundHeight(x, z + eps);
     const hzm = groundHeight(x, z - eps);
-    const dx = hx - hxm;
-    const dz = hz - hzm;
-    const len = Math.sqrt(dx * dx + 4 * eps * eps + dz * dz);
-    return new THREE.Vector3(dx / len, 2 * eps / len, dz / len);
+    const dhx = (hxp - hxm) / (2 * eps);
+    const dhz = (hzp - hzm) / (2 * eps);
+    const len = Math.sqrt(dhx * dhx + 1 + dhz * dhz);
+    return new THREE.Vector3(-dhx / len, 1 / len, -dhz / len);
   }
 
   /** Place un groupe sur le sol : position y = hauteur du sol + yOffset, rotation alignée sur la normale. */

@@ -1,13 +1,13 @@
 export const floorVert = /* glsl */`
   varying vec3 vWorldPos;
   varying vec3 vNormal;
-  
+
   float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
     p += dot(p, p + 45.32);
     return fract(p.x * p.y);
   }
-  
+
   float noise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
@@ -20,19 +20,21 @@ export const floorVert = /* glsl */`
   }
 
   void main() {
-      vec4 wp = modelMatrix * vec4(position, 1.0);
-      float disp = noise(wp.xz * 0.8) * 3.0;
-      wp.y += disp;
-      vWorldPos = wp.xyz;
-      // Normale approximée : gradient du noise sur XZ (même fréquence que disp)
-      float eps = 0.02;
-      float nx = noise((wp.xz + vec2(eps, 0.0)) * 0.8) * 3.0;
-      float ny = noise((wp.xz + vec2(-eps, 0.0)) * 0.8) * 3.0;
-      float nz = noise((wp.xz + vec2(0.0, eps)) * 0.8) * 3.0;
-      float nw = noise((wp.xz + vec2(0.0, -eps)) * 0.8) * 3.0;
-      vNormal = normalize(vec3(nx - ny, 2.0 * eps, nz - nw));
-      gl_Position = projectionMatrix * viewMatrix * wp;
-    }
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    float disp = noise(wp.xz * 0.8) * 3.0;
+    wp.y += disp;
+    vWorldPos = wp.xyz;
+    // Normale : pour surface r(x,z)=(x,h(x,z),z), normale = (-dh/dx, 1, -dh/dz)
+    float eps = 0.02;
+    float hxp = noise((wp.xz + vec2(eps, 0.0)) * 0.8) * 3.0;
+    float hxm = noise((wp.xz + vec2(-eps, 0.0)) * 0.8) * 3.0;
+    float hzp = noise((wp.xz + vec2(0.0, eps)) * 0.8) * 3.0;
+    float hzm = noise((wp.xz + vec2(0.0, -eps)) * 0.8) * 3.0;
+    float dhx = (hxp - hxm) / (2.0 * eps);
+    float dhz = (hzp - hzm) / (2.0 * eps);
+    vNormal = normalize(vec3(-dhx, 1.0, -dhz));
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }
 `;
 
 export const floorFrag = /* glsl */`

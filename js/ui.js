@@ -1582,26 +1582,6 @@ export class UI {
       case 'recall-expedition':
         this.recallOne(el.dataset.id);
         break;
-      case 'combat-attack': {
-        // Le combat est automatique, cette action ne devrait plus être appelée
-        this.closeModal();
-        break;
-      }
-      case 'combat-heavy': {
-        // Le combat est automatique, cette action ne devrait plus être appelée
-        this.closeModal();
-        break;
-      }
-      case 'combat-heal': {
-        // Le combat est automatique, cette action ne devrait plus être appelée
-        this.closeModal();
-        break;
-      }
-      case 'combat-flee': {
-        // Le combat est automatique, cette action ne devrait plus être appelée
-        this.closeModal();
-        break;
-      }
       case 'combat-result-continue': {
         this.closeModal();
         break;
@@ -1719,40 +1699,7 @@ export class UI {
     this.openClaimRewardModal(result);
   }
 
-  /** Modal de combat d'expédition. */
-  openCombatModal(combat) {
-    const { foe, foeHp, foeMaxHp, playerHp, playerMaxHp, combatLog } = combat;
-    const foePct = foeMaxHp > 0 ? Math.round((foeHp / foeMaxHp) * 100) : 0;
-    const playerPct = playerMaxHp > 0 ? Math.round((playerHp / playerMaxHp) * 100) : 100;
-    const logsHtml = combatLog.slice(-5).map(l => `<div class="combat-log">${esc(l)}</div>`).join('');
-
-    this.openModal(`
-      ${this.modalHead('Combat', foe.beat.name, foe.beat.elite ? 'ÉLITE' : '')}
-      <div class="modal-body">
-        <div class="combat-hp">
-          <div class="hp-row">
-            <span class="hp-name">${esc(foe.beat.name)}</span>
-            <span class="hp-val">${foeHp} / ${foeMaxHp}</span>
-          </div>
-          <div class="hp-bar"><div class="hp-fill" style="width:${foePct}%;background:var(--danger)"></div></div>
-          <div class="hp-row">
-            <span class="hp-name">Vous</span>
-            <span class="hp-val">${playerHp} / ${playerMaxHp}</span>
-          </div>
-          <div class="hp-bar"><div class="hp-fill" style="width:${playerPct}%;background:var(--mint)"></div></div>
-        </div>
-        <div class="combat-log">${logsHtml || '<div class="combat-log">Le combat commence...</div>'}</div>
-      </div>
-      <div class="modal-actions">
-        <button class="btn primary" type="button" data-action="combat-attack">Attaquer</button>
-        <button class="btn" type="button" data-action="combat-heavy">Attaque lourde</button>
-        <button class="btn ghost" type="button" data-action="combat-heal">Soigner</button>
-        <button class="btn ghost" type="button" data-action="combat-flee">Fuir</button>
-      </div>
-    `);
-  }
-
-  /** Modal de résultat de combat : victoire. */
+  /** Modal de résultat de combat : victoire (combat entièrement automatique). */
   openCombatResultModal(combat) {
     const { foe, loot, xp, biomass, log, playerHp, playerMaxHp } = combat;
     const playerPct = playerMaxHp > 0 ? Math.round((playerHp / playerMaxHp) * 100) : 100;
