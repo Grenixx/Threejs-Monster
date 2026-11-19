@@ -672,7 +672,7 @@ export class UI {
     const zone = ZONE_BY_ID[exp.zoneId];
     const members = this.game.expeditionMembers(exp);
     if (!zone || !members.length) return '';
-    const lines = expeditionJournal(exp, members, zone).slice(-10);
+    const lines = expeditionJournal(exp, members, zone).slice(-20);
     return lines.map(line => `<div class="jrow ${line.kind}">
         <span class="jtime">${formatClock(line.t)}</span>
         <span class="jicon">${icon(line.icon, 12)}</span>
