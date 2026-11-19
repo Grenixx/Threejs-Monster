@@ -287,8 +287,8 @@ export function createScene(canvas, options = {}) {
     const hits = floorRaycaster.intersectObject(floor);
     if (hits.length === 0) return null;
     const hit = hits[0];
-    const worldNormal = hit.face.normal.clone().applyQuaternion(floor.quaternion);
-    return { point: hit.point.clone(), normal: worldNormal };
+    // hit.normal est déjà en espace monde (Three.js transforme le résultat).
+    return { point: hit.point.clone(), normal: hit.normal.clone() };
   }
 
   /** Hauteur du sol à (x, z) via raycast (identique au shader). */
