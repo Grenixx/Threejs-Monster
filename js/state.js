@@ -7,7 +7,7 @@ import {
   ROLES, ROLE_KEYS, LAB_DEFENSES
 } from './data.js';
 import {
-  uid, generatePart, generateMonsterName, createMonster, createStarterParts, monsterStats, monsterPower,
+  uid, generatePart, generateMonsterName, generateResearcherName, createMonster, createStarterParts, monsterStats, monsterPower,
   capacityOf, canAttach, autoPlacements, applyXp, nextLevelXp,
   expeditionRates, groupExpeditionRates, resolveGroupExpedition,
   fairPrice, monsterValue, formatNumber, formatDuration, zonePower, roleOf,
@@ -53,7 +53,7 @@ export function createInitialState(playerName) {
     createdAt: Date.now(),
     player: {
       id: uid('player'),
-      name: playerName || `Chercheur-${randInt(100, 999)}`,
+      name: playerName || generateResearcherName(),
       createdAt: Date.now()
     },
     resources: { biomass: BALANCE.startBiomass, shards: BALANCE.startShards },
@@ -92,12 +92,6 @@ export function createInitialState(playerName) {
     },
     settings: { reduceMotion: false }
   };
-
-  // Le monstre de départ a déjà deux greffes.
-  const eyeSlot = 0;
-  const clawSlot = Math.floor(BODIES.larve.sockets * 0.55);
-  monster.attachments.push({ part: parts.eye, socket: eyeSlot });
-  monster.attachments.push({ part: parts.claw, socket: clawSlot });
 
   logEntry(state, `Le laboratoire est en ligne. ${monster.name} vous attend.`, 'system');
   logEntry(state, 'Objectif : récolter, assembler, expédier, échanger.', 'info');

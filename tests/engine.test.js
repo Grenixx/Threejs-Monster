@@ -32,7 +32,7 @@ test('état initial cohérent', () => {
   const s = makeGameState();
   assert.equal(s.monsters.length, 1);
   assert.equal(s.inventory.length, 3);
-  assert.equal(s.monsters[0].attachments.length, 2);
+  assert.equal(s.monsters[0].attachments.length, 0);
   assert.ok(s.resources.biomass > 0);
   assert.ok(s.market.listings.length >= 6);
 });
@@ -40,8 +40,10 @@ test('état initial cohérent', () => {
 test('stats du monstre = corps + parties', () => {
   const s = makeGameState();
   const monster = s.monsters[0];
+  // Le monstre de départ est un corps nu ; on lui ajoute une partie.
+  const eye = generatePart('eye', 'common', 101);
+  monster.attachments.push({ part: eye, socket: 0 });
   const stats = monsterStats(monster);
-  const eye = monster.attachments[0].part;
   assert.ok(stats.perception >= eye.stats.perception);
   assert.ok(monsterPower(monster) > 0);
 });

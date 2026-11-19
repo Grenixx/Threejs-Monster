@@ -521,15 +521,36 @@ export function priceRange(part) {
 // -------------------------------------------------------------
 // NOMS
 // -------------------------------------------------------------
-const NAME_S1 = ['Azh', 'Vor', 'Kal', 'Nyx', 'Zul', 'Mor', 'Kar', 'Gha', 'Xar', 'Tho', 'Ulg', 'Vex', 'Ith', 'Oph', 'Dra', 'Syl', 'Ur', 'Mog', 'Zer', 'Kro'];
-const NAME_S2 = ['', '', 'a', 'o', 'u', 'e', 'ka', 'zo', 'ra', 'thi', 'ne', 'sa', 'lu', 'mi'];
-const NAME_S3 = ['k', 'th', 'n', 'z', 'x', 'gul', 'tor', 'zar', 'oth', 'iss', 'ak', 'or', 'an', 'ys', 'eth', 'mog', 'ul', 'rak', 'ith'];
+const CONSONANTS = ['b','c','d','f','g','h','j','k','l','m','n','p','q','r','s','t','v','w','x','z'];
+const VOWELS = ['a','e','i','o','u','y'];
+const CLIFFS = ["'", '-', ''];
+
+function pick(arr, rng) {
+  return arr[Math.floor(rng() * arr.length)];
+}
+
+function syllable(rng) {
+  // Alternance consonne/voyelle avec parfois une consonne finale.
+  const c = pick(CONSONANTS, rng);
+  const v = pick(VOWELS, rng);
+  const end = rng() < 0.35 ? pick(CONSONANTS, rng) : '';
+  return c + v + end;
+}
 
 export function generateMonsterName(rng = Math.random) {
-  const a = NAME_S1[Math.floor(rng() * NAME_S1.length)];
-  const b = NAME_S2[Math.floor(rng() * NAME_S2.length)];
-  const c = NAME_S3[Math.floor(rng() * NAME_S3.length)];
-  return `${a}${b}${c}`;
+  const parts = [];
+  const count = 2 + Math.floor(rng() * 2); // 2 ou 3 syllabes
+  for (let i = 0; i < count; i++) parts.push(syllable(rng));
+  let name = parts.join('');
+  if (rng() < 0.25) name += pick(CLIFFS, rng) + pick(['th','k','x','n','r','s'], rng);
+  // Première lettre en majuscule.
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+export function generateResearcherName(rng = Math.random) {
+  const titles = ['Chercheur', 'Docteur', 'Spécimen', 'Sujet', 'Érudit', 'Nécromancien', 'Alchimiste'];
+  const name = generateMonsterName(rng);
+  return `${pick(titles, rng)} ${name}`;
 }
 
 // -------------------------------------------------------------

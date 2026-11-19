@@ -758,11 +758,15 @@ export function createScene(canvas, options = {}) {
     };
     expeditionFoes = [];
     const expSeed = opts.seed || Math.floor(Math.random() * 2 ** 31);
+    const JOURNEY_START = -12;
+    const JOURNEY_END = 12;
     for (const beat of opts.beats || []) {
       if (beat.kind !== 'enemy' || !beat.beast) continue;
       const foe = buildExpeditionBeast(beat.beast, zone.hue, expSeed);
       const lane = (expeditionFoes.length % 2 === 0 ? -1 : 1) * (0.35 + (expeditionFoes.length % 3) * 0.3);
-      foe.group.position.set(beat.targetUid ? lane : 0, 0, -7);
+      foe.laneX = lane;
+      foe.beatZ = JOURNEY_START + beat.at * (JOURNEY_END - JOURNEY_START);
+      foe.group.position.set(foe.laneX, 0, foe.beatZ);
       foe.beat = beat;
       foe.group.visible = false;
       foe.labelEl = createFoeLabel(beat.beast);
@@ -1188,43 +1192,43 @@ export function createScene(canvas, options = {}) {
         const now = Date.now();
         const span = expeditionClock.duration * 1000;
         const progress = Math.max(0, Math.min(1, (now - expeditionClock.startedAt) / span));
-        const spawnDur = 0.22;
-        const stayDur = 0.10;
+        const JOURNEY_START = -12;
+        const JOURNEY_END = 12;
+        const camZ = JOURNEY_START + progress * (JOURNEY_END - JOURNEY_START);
+        controls.target.set(0, 0.95, camZ);
+
+        // L'escouade du joueur avance juste derrière la caméra.
+        for (const actor of expeditionActors) {
+          const wx = Math.sin(t * 0.7 + actor.phase) * 0.25;
+          actor.group.position.set(wx, actor.baseY, camZ - 4 + Math.sin(t * 3 + actor.phase) * 0.1);
+          actor.group.rotation.y = Math.sin(t * 2.2 + actor.phase) * 0.2;
+          if (actor.labelEl) actor.labelEl.style.opacity = '1';
+        }
+
         for (const foe of expeditionFoes) {
-          const spawnStart = Math.max(0, foe.beat.at - spawnDur - stayDur);
-          const spawnEnd = spawnStart + spawnDur;
-          const dieStart = foe.beat.at;
-          if (!foe.dying && progress >= dieStart) {
+          const dist = camZ - foe.beatZ; // >0 = deja depasse
+          const approaching = dist < 7 && dist > -2;
+          const passed = dist >= 7;
+          if (!foe.dying && passed) {
             foe.dying = true;
             foe.dyingAt = now;
             if (foe.labelEl) foe.labelEl.style.opacity = '0';
           }
           if (foe.dying) {
-            // Mort : inverse du spawn, disparait vers le brouillard.
+            // Mort : inverse du spawn, recule dans le brouillard derriere.
             const k = Math.min(1, (now - foe.dyingAt) / 650);
             foe.group.visible = k < 1;
-            foe.group.position.z = 0 + k * -7.4;
+            foe.group.position.z = foe.beatZ + k * -7;
             foe.group.position.y = foe.baseY - k * 0.22;
-            foe.group.rotation.z = k * 1.3;
+            foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25 * (1 - k);
             foe.group.scale.setScalar(foe.baseScale * (1 - k * 0.55));
-          } else if (progress >= spawnStart && progress < spawnEnd) {
-            // Spawn : apparait depuis le brouillard.
-            const k = Math.min(1, Math.max(0, (progress - spawnStart) / spawnDur));
+          } else if (approaching) {
+            // Apparait de devant (brouillard) puis est croise.
+            const k = Math.min(1, Math.max(0, (7 - dist) / 9));
             foe.group.visible = true;
-            foe.group.position.z = -7 + k * 7.4;
-            foe.group.position.y = foe.baseY + Math.abs(Math.sin(t * 7 + foe.phase)) * 0.05 * k;
+            foe.group.position.set(foe.laneX, foe.baseY, foe.beatZ);
             foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25;
             foe.group.scale.setScalar(foe.baseScale * (0.55 + 0.45 * k));
-          } else if (progress >= spawnEnd && progress < dieStart) {
-            // Visible : marche dans l'environnement (wander sur le sol).
-            const wx = Math.sin(t * foe.wanderSpeed + foe.phase) * 0.35 + foe.wanderX * 0.1;
-            const wz = Math.cos(t * foe.wanderSpeed + foe.phase) * 0.25 + foe.wanderZ * 0.1;
-            foe.group.visible = true;
-            foe.group.position.z = wz;
-            foe.group.position.x = wx;
-            foe.group.position.y = foe.baseY + Math.abs(Math.sin(t * 7 + foe.phase)) * 0.05;
-            foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25 + Math.atan2(wx, wz || 1) * 0.5;
-            foe.group.scale.setScalar(foe.baseScale);
           } else if (foe.group.visible) {
             foe.group.visible = false;
           }
