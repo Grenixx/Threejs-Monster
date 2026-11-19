@@ -684,9 +684,12 @@ export function createScene(canvas, options = {}) {
     expeditionRoot = root;
     scene.add(root);
 
-    const offsets = list.length === 1 ? [0] : list.length === 2 ? [-1.3, 1.3] : [-1.75, 0, 1.75];
     const leaderId = opts.leaderId || list[0].uid;
+    const margin = 0.14;
 
+    // Première passe : construire et scaler chaque monstre, mesurer sa largeur
+    // finale pour les placer côte à côte sans clipping dans la preview 3D.
+    const prepared = [];
     list.forEach((monster, index) => {
       const built = buildAssemblyMonster(monster);
       const actor = built.group;
@@ -695,24 +698,39 @@ export function createScene(canvas, options = {}) {
       const bbox = new THREE.Box3().setFromObject(actor);
       const size = bbox.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z, 0.001);
-      const scale = 1.15 / maxDim;
+      let scale = 1.15 / maxDim;
       actor.scale.setScalar(scale);
+      if (monster.uid !== leaderId) actor.scale.multiplyScalar(0.94);
       actor.updateMatrixWorld(true);
 
       const bbox2 = new THREE.Box3().setFromObject(actor);
-      const baseX = offsets[index];
-      actor.position.set(baseX, 0.02 - bbox2.min.y, 0);
-      actor.rotation.y = (index - (list.length - 1) / 2) * 0.12;
+      prepared.push({
+        actor, built, monster, index,
+        width: bbox2.max.x - bbox2.min.x,
+        baseY: -bbox2.min.y
+      });
+    });
+
+    // Largeur totale : largeurs des monstres + marges entre eux.
+    let totalWidth = 0;
+    prepared.forEach((p, i) => {
+      totalWidth += p.width;
+      if (i < prepared.length - 1) totalWidth += margin;
+    });
+
+    // Deuxième passe : placer côte à côte, centré sur l'origine.
+    let cursorX = -totalWidth / 2;
+    prepared.forEach((p) => {
+      const { actor, monster, index } = p;
+      cursorX += p.width / 2;
+      actor.position.set(cursorX, 0.02 + p.baseY, 0);
+      actor.rotation.y = (index - (prepared.length - 1) / 2) * 0.12;
       actor.userData.baseYaw = actor.rotation.y;
       actor.userData.yaw = 0;
-
+      cursorX += p.width / 2 + margin;
 
       const role = ROLES[monster.role] || ROLES.harvester;
       const labelEl = createActorLabel(monster, role);
-
-      if (monster.uid !== leaderId) {
-        actor.scale.multiplyScalar(0.94);
-      }
 
       root.add(actor);
       expeditionActors.push({
@@ -720,7 +738,7 @@ export function createScene(canvas, options = {}) {
         monster,
         role,
         roleKey: monster.role || 'harvester',
-        baseX,
+        baseX: actor.position.x,
         baseY: actor.position.y,
         phase: index * 1.7 + (hashText(monster.uid) % 100) / 100,
         labelEl,
