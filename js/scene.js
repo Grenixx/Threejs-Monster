@@ -233,7 +233,6 @@ export function createScene(canvas, options = {}) {
       uniforms: floorUniforms,
       depthWrite: true
     });
-
     const floorGeo = new THREE.PlaneGeometry(200, 200, 512, 512);
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
@@ -243,8 +242,7 @@ export function createScene(canvas, options = {}) {
 
     // ------------------------------------------------ HAUTEUR / NORMALE DU SOL ---
     // Calcul mathématique identique au vertex shader floorVert (fréquence 0.8,
-    // amplitude 1.2). Pas de raycasting (fragile sur BufferGeometry) : les
-    // fonctions ci-dessous donnent exactement la même chose que le shader.
+    // amplitude 1.2). Les fonctions donnent exactement la même chose que le shader.
     function groundHash2(x, y) {
       x = (x * 123.34) % 1;
       y = (y * 456.21) % 1;
@@ -295,9 +293,9 @@ export function createScene(canvas, options = {}) {
       group.quaternion.copy(q);
       group.updateMatrixWorld();
       return { pos, nrm };
-      }
+    }
 
-      // -----------------------------------------------------------
+    // -----------------------------------------------------------
   // PARTICULES
   // -----------------------------------------------------------
   const particleCount = 260;
