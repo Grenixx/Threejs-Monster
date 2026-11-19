@@ -2,37 +2,10 @@ export const floorVert = /* glsl */`
   varying vec3 vWorldPos;
   varying vec3 vNormal;
 
-  float hash(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
-  }
-
-  float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  }
-
   void main() {
     vec4 wp = modelMatrix * vec4(position, 1.0);
-    float disp = noise(wp.xz * 0.8) * 1.2;
-    wp.y += disp;
     vWorldPos = wp.xyz;
-    // Normale : pour surface r(x,z)=(x,h(x,z),z), normale = (-dh/dx, 1, -dh/dz)
-    float eps = 0.02;
-    float hxp = noise((wp.xz + vec2(eps, 0.0)) * 0.8) * 3.0;
-    float hxm = noise((wp.xz + vec2(-eps, 0.0)) * 0.8) * 3.0;
-    float hzp = noise((wp.xz + vec2(0.0, eps)) * 0.8) * 3.0;
-    float hzm = noise((wp.xz + vec2(0.0, -eps)) * 0.8) * 3.0;
-    float dhx = (hxp - hxm) / (2.0 * eps);
-    float dhz = (hzp - hzm) / (2.0 * eps);
-    vNormal = normalize(vec3(-dhx, 1.0, -dhz));
+    vNormal = vec3(0.0, 1.0, 0.0);
     gl_Position = projectionMatrix * viewMatrix * wp;
   }
 `;
@@ -55,12 +28,9 @@ export const floorFrag = /* glsl */`
     float dist = length(vWorldPos.xz);
     float fade = smoothstep(25.0, 1.0, dist);
 
-    // Coloration selon la hauteur pour bien voir les collines
-    float height = smoothstep(0.0, 1.0, vWorldPos.y * 2.0 + 0.5);
     vec3 color = mix(uBg, uGrid, line * fade);
-    color = mix(color, uBg + vec3(0.1, 0.15, 0.2), height * 0.6);
 
-    // Brouillard appliqué au sol (s'adapte à la couleur du monstre)
+    // Brouillard appliqué au sol
     float fogFactor = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
     color = mix(color, uFogColor, fogFactor);
 

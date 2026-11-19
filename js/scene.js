@@ -238,62 +238,21 @@ export function createScene(canvas, options = {}) {
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0;
   floor.renderOrder = 1;
-  scene.add(floor);
+    scene.add(floor);
 
-  // ------------------------------------------------ HAUTEUR / NORMALE DU SOL ---
-  // Calcul mathématique identique au vertex shader floorVert (fréquence 0.8,
-  // amplitude 1.2). Les fonctions donnent exactement la même chose que le shader.
-  function groundHash2(x, y) {
-    x = (x * 123.34) % 1;
-    y = (y * 456.21) % 1;
-    const d = x * (x + 45.32) + y * (y + 45.32);
-    return ((x + d) * (y + d)) % 1;
-  }
-
-  function groundNoise(x, y) {
-    const i = { x: Math.floor(x), y: Math.floor(y) };
-    const f = { x: x - i.x, y: y - i.y };
-    const u = f.x * f.x * (3.0 - 2.0 * f.x);
-    const v = f.y * f.y * (3.0 - 2.0 * f.y);
-    const a = groundHash2(i.x, i.y);
-    const b = groundHash2(i.x + 1, i.y);
-    const c = groundHash2(i.x, i.y + 1);
-    const d = groundHash2(i.x + 1, i.y + 1);
-    return (a + (b - a) * u) + ((c + (d - c) * u) - (a + (b - a) * u)) * v;
-  }
-
-  /** Hauteur du sol à (x, z) — IDENTIQUE au vertex shader (fréquence 0.8, amplitude 1.2). */
-  function groundHeight(x, z) {
-    return groundNoise(x * 0.8, z * 0.8) * 1.2;
-  }
-
-  /** Normale du sol à (x, z) — IDENTIQUE au vertex shader. */
-  function groundNormal(x, z) {
-    const eps = 0.02;
-    const hxp = groundHeight(x + eps, z);
-    const hxm = groundHeight(x - eps, z);
-    const hzp = groundHeight(x, z + eps);
-    const hzm = groundHeight(x, z - eps);
-    const dhx = (hxp - hxm) / (2 * eps);
-    const dhz = (hzp - hzm) / (2 * eps);
-    const len = Math.sqrt(dhx * dhx + 1 + dhz * dhz);
-    return new THREE.Vector3(-dhx / len, 1 / len, -dhz / len);
-  }
-
-  /** Place un groupe sur le sol : y = hauteur du sol + yOffset, rotation alignée sur la normale. */
-  function placeOnGround(group, x, z, keepYaw = 0, yOffset = 0) {
-    const pos = new THREE.Vector3(x, groundHeight(x, z) + yOffset, z);
-    const nrm = groundNormal(x, z);
-    group.position.copy(pos);
-    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), nrm);
-    if (keepYaw) {
-      const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), keepYaw);
-      q.premultiply(qy);
+    // ------------------------------------------------ PLACEMENT SOL PLAT ---
+    // Sol plat à y=0. Pas de displacement, pas de normale calculée.
+    /** Place un groupe sur le sol plat (y = yOffset). Rotation optionnelle autour de Y. */
+    function placeOnGround(group, x, z, keepYaw = 0, yOffset = 0) {
+      group.position.set(x, yOffset, z);
+      if (keepYaw) {
+        group.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), keepYaw);
+      } else {
+        group.quaternion.identity();
+      }
+      group.updateMatrixWorld();
+      return { pos: group.position.clone(), nrm: new THREE.Vector3(0, 1, 0) };
     }
-    group.quaternion.copy(q);
-    group.updateMatrixWorld();
-    return { pos, nrm };
-  }
 
     // -----------------------------------------------------------
   // PARTICULES
@@ -914,19 +873,18 @@ export function createScene(canvas, options = {}) {
     const JOURNEY_START = -12;
     const JOURNEY_END = 12;
     for (const beat of opts.beats || []) {
-      if (beat.kind !== 'enemy' || !beat.beast) continue;
-      const foe = buildExpeditionBeast(beat.beast, zone.hue, expSeed);
-      const lane = (expeditionFoes.length % 2 === 0 ? -1 : 1) * (0.35 + (expeditionFoes.length % 3) * 0.3);
-      foe.laneX = lane;
-      foe.beatZ = JOURNEY_START + beat.at * (JOURNEY_END - JOURNEY_START);
-      foe.groundY = groundHeight(foe.laneX, foe.beatZ);
-      placeOnGround(foe.group, foe.laneX, foe.beatZ, 0, foe.baseY);
-      foe.beat = beat;
-      foe.group.visible = false;
-      foe.labelEl = createFoeLabel(beat.beast);
-      root.add(foe.group);
-      expeditionFoes.push(foe);
-    }
+          if (beat.kind !== 'enemy' || !beat.beast) continue;
+          const foe = buildExpeditionBeast(beat.beast, zone.hue, expSeed);
+          const lane = (expeditionFoes.length % 2 === 0 ? -1 : 1) * (0.35 + (expeditionFoes.length % 3) * 0.3);
+          foe.laneX = lane;
+          foe.beatZ = JOURNEY_START + beat.at * (JOURNEY_END - JOURNEY_START);
+          placeOnGround(foe.group, foe.laneX, foe.beatZ, 0, foe.baseY);
+          foe.beat = beat;
+          foe.group.visible = false;
+          foe.labelEl = createFoeLabel(beat.beast);
+          root.add(foe.group);
+          expeditionFoes.push(foe);
+        }
 
     applyPalette(opts.hue ?? zone.hue);
     expeditionMode = true;
