@@ -306,6 +306,9 @@ export function createScene(canvas, options = {}) {
   let expeditionProps = [];
   let expeditionFoes = [];
   let expeditionClock = null;   // { startedAt, duration }
+  let expeditionCombat = null;  // { active:boolean, foe:object, start:number, damageDealt:boolean }
+  let expeditionCamFollow = true; // la caméra suit le monstre du joueur si true
+  let expeditionCamFollowTimer = 0; // s réactive le suivi auto après 2s sans interaction
   let expeditionMode = false;
   let currentZone = null;
 
@@ -557,6 +560,58 @@ export function createScene(canvas, options = {}) {
     };
   }
 
+  /**
+   * Ressources au sol éparpillées sur toute la ligne de l'expédition (visuel uniquement).
+   * Jamais touchables par le joueur : elles restent sur expeditionRoot.
+   */
+  function buildJourneyResources(zone, rng) {
+    const group = new THREE.Group();
+    group.name = 'expedition-journey-resources';
+    const count = 18;
+    const color = new THREE.Color().setHSL(zone.hue, 0.55, 0.32);
+    const rockMat = new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0.05 });
+
+    for (let i = 0; i < count; i++) {
+      const prop = new THREE.Group();
+      const z = -12 + (i / count) * 24 + (rng() - 0.5) * 2.5;
+      const x = (rng() - 0.5) * 6;
+      const scale = 0.15 + rng() * 0.35;
+
+      const kind = i % 4;
+      if (kind === 0) {
+        const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 * scale, 0), rockMat);
+        rock.position.set(x, 0.15 * scale, z);
+        rock.scale.set(1, 0.6 + rng() * 0.5, 1);
+        prop.add(rock);
+      } else if (kind === 1) {
+        const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.3 * scale, 0), rockMat);
+        crystal.position.set(x, 0.15 * scale, z);
+        crystal.scale.y = 1.4 + rng() * 1.2;
+        prop.add(crystal);
+      } else if (kind === 2) {
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * scale, 0.08 * scale, 0.5 * scale, 6), rockMat);
+        stem.position.y = 0.25 * scale;
+        prop.add(stem);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.2 * scale, 8, 6), rockMat);
+        cap.scale.y = 0.5;
+        cap.position.y = 0.52 * scale;
+        prop.add(cap);
+      } else {
+        const bone = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.4, 4, 8), rockMat);
+        bone.rotation.z = Math.PI / 2;
+        bone.position.set(x, 0.2 * scale, z);
+        prop.add(bone);
+      }
+
+      prop.userData.travel = 0;
+      prop.userData.spin = (rng() - 0.5) * 0.8;
+      prop.userData.baseY = 0;
+      group.add(prop);
+    }
+
+    return group;
+  }
+
   function buildEnvironment(zone) {
     const group = new THREE.Group();
     group.name = 'expedition-environment';
@@ -749,6 +804,13 @@ export function createScene(canvas, options = {}) {
     const environment = buildEnvironment(zone);
     root.add(environment);
     expeditionProps = environment.children.slice();
+
+    // Ressources au sol sur tout le chemin de l'expédition (visuel uniquement,
+    // jamais touchables par le joueur).
+    const journeyRng = seededRandom(expSeed + 777);
+    const journeyResources = buildJourneyResources(zone, journeyRng);
+    root.add(journeyResources);
+    expeditionProps = expeditionProps.concat(journeyResources.children.slice());
 
     // Ennemis : un par rencontre armée, tirés de la graine de l'expédition.
     // Ils sont assemblés comme des monstres joueurs et recolorés au biome.
@@ -1146,91 +1208,126 @@ export function createScene(canvas, options = {}) {
     updateFloorPalette(t);
 
     if (expeditionMode && expeditionRoot) {
-      const travel = 1.0;
+      const now = Date.now();
+      const span = expeditionClock ? expeditionClock.duration * 1000 : 1;
+      const progress = expeditionClock
+        ? Math.max(0, Math.min(1, (now - expeditionClock.startedAt) / span))
+        : 0;
+      const JOURNEY_START = -12;
+      const JOURNEY_END = 12;
+
+      // ---- CAMÉRA : centrée sur le monstre du joueur, orbite libre ----
+      const playerActor = expeditionActors[0];
+      const paused = expeditionCombat && expeditionCombat.active;
+
+      // Réactive le suivi auto après 2s sans interaction caméra.
+      if (userMovedCamera) {
+        expeditionCamFollowTimer = (expeditionCamFollowTimer || 0) + dt;
+        if (expeditionCamFollowTimer > 2) {
+          userMovedCamera = false;
+          expeditionCamFollow = true;
+          expeditionCamFollowTimer = 0;
+        }
+      }
+
+      let camZ;
+      if (!paused) {
+        camZ = JOURNEY_START + progress * (JOURNEY_END - JOURNEY_START);
+      } else {
+        camZ = expeditionCombat.foe.beatZ;
+      }
+
+      if (expeditionCamFollow && playerActor && !userMovedCamera) {
+        const p = playerActor.group.position;
+        const targetZ = paused ? camZ : camZ - 2;
+        controls.target.set(p.x, p.y + 1.0, targetZ);
+        const camOffset = new THREE.Vector3(0, 1.4, 3.0);
+        camOffset.applyQuaternion(camera.quaternion);
+        camera.position.copy(p).add(camOffset);
+        camera.lookAt(controls.target);
+        controls.update();
+        lockElevation();
+      }
+
+      // ---- ESCOUADE DU JOUEUR : avance ou s'arrête en combat ----
       for (const actor of expeditionActors) {
         const phase = actor.phase;
-        const walk = Math.sin(t * 5.2 + phase);
-        actor.group.position.x = actor.baseX + Math.sin(t * 0.7 + phase) * 0.08;
-        actor.group.position.z = Math.sin(t * 0.45 + phase) * 0.12;
-        actor.group.position.y = actor.baseY + Math.abs(walk) * 0.035;
-
-        let roleYaw = 0;
-        if (actor.roleKey === 'raider') {
-          const lunge = Math.max(0, Math.sin(t * 1.3 + phase)) ** 6;
-          actor.group.position.z += lunge * 0.18;
-          actor.group.rotation.x = -lunge * 0.08;
-        } else if (actor.roleKey === 'harvester') {
-          actor.group.rotation.z = Math.sin(t * 1.6 + phase) * 0.04;
-        } else if (actor.roleKey === 'guardian') {
-          roleYaw = Math.sin(t * 0.8 + phase) * 0.12;
+        if (paused) {
+          // Attendre pendant le combat.
+          actor.group.position.y = actor.baseY + Math.abs(Math.sin(t * 3 + phase)) * 0.02;
+          actor.group.rotation.y = Math.sin(t * 1.5 + phase) * 0.1;
         } else {
-          actor.group.position.z -= 0.12;
-          roleYaw = Math.sin(t * 1.1 + phase) * 0.18;
+          const wx = Math.sin(t * 0.7 + phase) * 0.25;
+          actor.group.position.set(wx, actor.baseY, camZ - 4 + Math.sin(t * 3 + phase) * 0.1);
+          actor.group.rotation.y = Math.sin(t * 2.2 + phase) * 0.2;
         }
-
-        // Orientation de base + rotation choisie par le joueur + oscillations du rôle.
-        actor.group.rotation.y = (actor.group.userData.baseYaw || 0) + (actor.group.userData.yaw || 0) + roleYaw;
+        actor.group.rotation.y =
+          (actor.group.userData.baseYaw || 0) +
+          (actor.group.userData.yaw || 0) +
+          (paused ? 0 : Math.sin(t * 2.2 + phase) * 0.2);
 
         // Animation des parties du monstre (tentacules, yeux, ailes, dents…).
         animateMonsterParts(actor.group, t);
 
-        if (actor.labelEl) {
-          actor.labelEl.style.opacity = '1';
-        }
+        if (actor.labelEl) actor.labelEl.style.opacity = '1';
       }
 
+      // ---- DÉCORS AU SOL : ne bougent jamais (jamais touchables par le joueur) ----
       for (const prop of expeditionProps) {
-        prop.position.z += prop.userData.travel * dt * 0.9;
-        if (prop.position.z > 4.5) prop.position.z -= 11;
         prop.position.y = prop.userData.baseY + Math.sin(t * 1.4 + prop.position.x) * 0.035;
         prop.rotation.y += prop.userData.spin * dt;
       }
 
-      // Rencontres : chaque ennemi sort du brouillard (spawn) puis s'y retire
-      // (mort = inverse exact du spawn), comme un combat de quête Fallout Shelter.
+      // ---- RENCONTRES : combat qui met en pause, puis reprise ----
       if (expeditionClock) {
-        const now = Date.now();
-        const span = expeditionClock.duration * 1000;
-        const progress = Math.max(0, Math.min(1, (now - expeditionClock.startedAt) / span));
-        const JOURNEY_START = -12;
-        const JOURNEY_END = 12;
-        const camZ = JOURNEY_START + progress * (JOURNEY_END - JOURNEY_START);
-        controls.target.set(0, 0.95, camZ);
-
-        // L'escouade du joueur avance juste derrière la caméra.
-        for (const actor of expeditionActors) {
-          const wx = Math.sin(t * 0.7 + actor.phase) * 0.25;
-          actor.group.position.set(wx, actor.baseY, camZ - 4 + Math.sin(t * 3 + actor.phase) * 0.1);
-          actor.group.rotation.y = Math.sin(t * 2.2 + actor.phase) * 0.2;
-          if (actor.labelEl) actor.labelEl.style.opacity = '1';
+        // Déclenche le combat quand on atteint un ennemi vivant.
+        if (!expeditionCombat && progress < 1) {
+          for (const foe of expeditionFoes) {
+            if (foe.dying) continue;
+            const dist = camZ - foe.beatZ;
+            if (dist < 3.5 && dist > -0.5) {
+              expeditionCombat = { active: true, foe, start: now, damageDealt: false };
+              break;
+            }
+          }
         }
 
         for (const foe of expeditionFoes) {
-          const dist = camZ - foe.beatZ; // >0 = deja depasse
-          const approaching = dist < 7 && dist > -2;
-          const passed = dist >= 7;
-          if (!foe.dying && passed) {
-            foe.dying = true;
-            foe.dyingAt = now;
-            if (foe.labelEl) foe.labelEl.style.opacity = '0';
-          }
-          if (foe.dying) {
-            // Mort : inverse du spawn, recule dans le brouillard derriere.
+          if (expeditionCombat && expeditionCombat.foe === foe) {
+            // EN COMBAT : l'ennemi reste devant le joueur.
+            foe.group.visible = true;
+            foe.group.position.set(foe.laneX, foe.baseY, foe.beatZ);
+            foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25;
+            foe.group.scale.setScalar(foe.baseScale);
+
+            // L'ennemi meurt après le combat, on reprend la route.
+            if (now - expeditionCombat.start > 3000) {
+              foe.dying = true;
+              foe.dyingAt = now;
+              expeditionCombat.active = false;
+              expeditionCombat = null;
+            }
+          } else if (foe.dying) {
+            // Mort : inverse du spawn, recule dans le brouillard derrière.
             const k = Math.min(1, (now - foe.dyingAt) / 650);
             foe.group.visible = k < 1;
             foe.group.position.z = foe.beatZ + k * -7;
             foe.group.position.y = foe.baseY - k * 0.22;
             foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25 * (1 - k);
             foe.group.scale.setScalar(foe.baseScale * (1 - k * 0.55));
-          } else if (approaching) {
-            // Apparait de devant (brouillard) puis est croise.
-            const k = Math.min(1, Math.max(0, (7 - dist) / 9));
-            foe.group.visible = true;
-            foe.group.position.set(foe.laneX, foe.baseY, foe.beatZ);
-            foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25;
-            foe.group.scale.setScalar(foe.baseScale * (0.55 + 0.45 * k));
-          } else if (foe.group.visible) {
-            foe.group.visible = false;
+          } else if (!expeditionCombat) {
+            // Pas de combat : apparaît de devant puis est croisé.
+            const dist = camZ - foe.beatZ;
+            const approaching = dist < 6 && dist > -1;
+            if (approaching) {
+              const k = Math.min(1, Math.max(0, (6 - dist) / 8));
+              foe.group.visible = true;
+              foe.group.position.set(foe.laneX, foe.baseY, foe.beatZ);
+              foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25;
+              foe.group.scale.setScalar(foe.baseScale * (0.55 + 0.45 * k));
+            } else if (foe.group.visible) {
+              foe.group.visible = false;
+            }
           }
         }
       }
