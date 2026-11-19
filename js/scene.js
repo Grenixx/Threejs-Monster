@@ -233,7 +233,7 @@ export function createScene(canvas, options = {}) {
     uniforms: floorUniforms,
     depthWrite: true
   });
-  const floorGeo = new THREE.PlaneGeometry(200, 200, 128, 128);
+  const floorGeo = new THREE.PlaneGeometry(200, 200, 256, 256);
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0;
