@@ -23,6 +23,20 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Expires', '0')
         super().end_headers()
 
+    def do_GET(self):
+        if self.path == '/api/health':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            import json
+            self.wfile.write(json.dumps({
+                'name': 'CHIMÈRE (solo)',
+                'online': 0
+            }).encode())
+            return
+        return super().do_GET()
+
     def log_message(self, fmt, *args):
         pass
 
