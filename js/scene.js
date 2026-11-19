@@ -578,57 +578,60 @@ export function createScene(canvas, options = {}) {
   }
 
   /**
-   * Ressources au sol éparpillées sur toute la ligne de l'expédition (visuel uniquement).
-   * Jamais touchables par le joueur : elles restent sur expeditionRoot.
-   */
-  function buildJourneyResources(zone, rng) {
-    const group = new THREE.Group();
-    group.name = 'expedition-journey-resources';
-    const count = 18;
-    const color = new THREE.Color().setHSL(zone.hue, 0.55, 0.32);
-    const rockMat = new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0.05 });
+     * Ressources au sol éparpillées sur toute la ligne de l'expédition (visuel uniquement).
+     * Jamais touchables par le joueur : elles restent sur expeditionRoot.
+     * Un seul type de décor par biome (déterministe selon zone.hue).
+     */
+    function buildJourneyResources(zone, rng) {
+      const group = new THREE.Group();
+      group.name = 'expedition-journey-resources';
+      const count = 18;
+      const color = new THREE.Color().setHSL(zone.hue, 0.55, 0.32);
+      const rockMat = new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0.05 });
 
-    for (let i = 0; i < count; i++) {
-      const prop = new THREE.Group();
-      const z = -12 + (i / count) * 24 + (rng() - 0.5) * 2.5;
-      const x = (rng() - 0.5) * 6;
-      const scale = 0.15 + rng() * 0.35;
+      // Un seul type par biome : 0=rocher, 1=cristal, 2=champignon, 3=os
+      const biomeKind = Math.floor((zone.hue * 100) % 4);
 
-      const kind = i % 4;
-      if (kind === 0) {
-        const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 * scale, 0), rockMat);
-        rock.position.set(0, 0.15 * scale, 0);
-        rock.scale.set(1, 0.6 + rng() * 0.5, 1);
-        prop.add(rock);
-      } else if (kind === 1) {
-        const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.3 * scale, 0), rockMat);
-        crystal.position.set(0, 0.15 * scale, 0);
-        crystal.scale.y = 1.4 + rng() * 1.2;
-        prop.add(crystal);
-      } else if (kind === 2) {
-        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * scale, 0.08 * scale, 0.5 * scale, 6), rockMat);
-        stem.position.y = 0.25 * scale;
-        prop.add(stem);
-        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.2 * scale, 8, 6), rockMat);
-        cap.scale.y = 0.5;
-        cap.position.y = 0.52 * scale;
-        prop.add(cap);
-      } else {
-        const bone = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.4, 4, 8), rockMat);
-        bone.rotation.z = Math.PI / 2;
-        bone.position.set(0, 0.2 * scale, 0);
-        prop.add(bone);
+      for (let i = 0; i < count; i++) {
+        const prop = new THREE.Group();
+        const z = -12 + (i / count) * 24 + (rng() - 0.5) * 2.5;
+        const x = (rng() - 0.5) * 6;
+        const scale = 0.15 + rng() * 0.35;
+
+        if (biomeKind === 0) {
+          const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 * scale, 0), rockMat);
+          rock.position.set(0, 0.15 * scale, 0);
+          rock.scale.set(1, 0.6 + rng() * 0.5, 1);
+          prop.add(rock);
+        } else if (biomeKind === 1) {
+          const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.3 * scale, 0), rockMat);
+          crystal.position.set(0, 0.15 * scale, 0);
+          crystal.scale.y = 1.4 + rng() * 1.2;
+          prop.add(crystal);
+        } else if (biomeKind === 2) {
+          const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * scale, 0.08 * scale, 0.5 * scale, 6), rockMat);
+          stem.position.y = 0.25 * scale;
+          prop.add(stem);
+          const cap = new THREE.Mesh(new THREE.SphereGeometry(0.2 * scale, 8, 6), rockMat);
+          cap.scale.y = 0.5;
+          cap.position.y = 0.52 * scale;
+          prop.add(cap);
+        } else {
+          const bone = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.4, 4, 8), rockMat);
+          bone.rotation.z = Math.PI / 2;
+          bone.position.set(0, 0.2 * scale, 0);
+          prop.add(bone);
+        }
+
+        placeOnGround(prop, x, z, 0, 0);
+        prop.userData.travel = 0;
+        prop.userData.spin = (rng() - 0.5) * 0.8;
+        prop.userData.baseY = 0;
+        group.add(prop);
       }
 
-      placeOnGround(prop, x, z, 0, 0);
-      prop.userData.travel = 0;
-      prop.userData.spin = (rng() - 0.5) * 0.8;
-      prop.userData.baseY = 0;
-      group.add(prop);
+      return group;
     }
-
-    return group;
-  }
 
   /** Lumières flottantes sur le chemin d'expédition pour éclairer le monstre. */
   function buildJourneyLights(zone) {
@@ -818,33 +821,31 @@ export function createScene(canvas, options = {}) {
       if (i < prepared.length - 1) totalWidth += margin;
     });
 
-    // Deuxième passe : placer côte à côte, centré sur l'origine.
-    let cursorX = -totalWidth / 2;
-    prepared.forEach((p) => {
-      const { actor, monster, index } = p;
-      cursorX += p.width / 2;
-      const yaw = (index - (prepared.length - 1) / 2) * 0.12;
-      placeOnGround(actor, cursorX, 0, yaw, p.baseY);
-      actor.userData.baseYaw = yaw;
-      actor.userData.yaw = 0;
-      cursorX += p.width / 2 + margin;
+    // Deuxième passe : placer tous les monstres au centre (x=0), avançant droit.
+        // Même vitesse pour tous : même Z progression.
+        prepared.forEach((p, index) => {
+          const { actor, monster } = p;
+          const yaw = 0; // droit devant
+          placeOnGround(actor, 0, 0, yaw, p.baseY);
+          actor.userData.baseYaw = yaw;
+          actor.userData.yaw = 0;
 
-      const role = ROLES[monster.role] || ROLES.harvester;
-      const labelEl = createActorLabel(monster, role);
+          const role = ROLES[monster.role] || ROLES.harvester;
+          const labelEl = createActorLabel(monster, role);
 
-      root.add(actor);
-      expeditionActors.push({
-        group: actor,
-        monster,
-        role,
-        roleKey: monster.role || 'harvester',
-        baseX: actor.position.x,
-        baseY: actor.position.y,
-        phase: index * 1.7 + (hashText(monster.uid) % 100) / 100,
-        labelEl,
-        leader: monster.uid === leaderId
-      });
-    });
+          root.add(actor);
+          expeditionActors.push({
+            group: actor,
+            monster,
+            role,
+            roleKey: monster.role || 'harvester',
+            baseX: 0,
+            baseY: actor.position.y,
+            phase: index * 1.7 + (hashText(monster.uid) % 100) / 100,
+            labelEl,
+            leader: monster.uid === leaderId
+          });
+        });
 
     const environment = buildEnvironment(zone);
     root.add(environment);
@@ -1301,26 +1302,26 @@ export function createScene(canvas, options = {}) {
       }
 
       // Escouade du joueur : avance ou attend pendant le combat.
-      for (const actor of expeditionActors) {
-        const phase = actor.phase;
-        if (inCombat) {
-          actor.group.position.y = actor.baseY + Math.abs(Math.sin(t * 3 + phase)) * 0.02;
-          actor.group.rotation.y = Math.sin(t * 1.5 + phase) * 0.1;
-        } else {
-          const wx = Math.sin(t * 0.7 + phase) * 0.25;
-          actor.group.position.set(wx, actor.baseY, camZ - 4 + Math.sin(t * 3 + phase) * 0.1);
-          actor.group.rotation.y = Math.sin(t * 2.2 + phase) * 0.2;
-        }
-        actor.group.rotation.y =
-          (actor.group.userData.baseYaw || 0) +
-          (actor.group.userData.yaw || 0) +
-          (inCombat ? 0 : Math.sin(t * 2.2 + phase) * 0.2);
+            for (const actor of expeditionActors) {
+              const phase = actor.phase;
+              if (inCombat) {
+                actor.group.position.y = actor.baseY + Math.abs(Math.sin(t * 3 + phase)) * 0.02;
+                actor.group.rotation.y = Math.sin(t * 1.5 + phase) * 0.1;
+              } else {
+                // Tous avancent droit, même vitesse, pas de latéral.
+                actor.group.position.set(0, actor.baseY, camZ - 4);
+                actor.group.rotation.y = 0;
+              }
+              actor.group.rotation.y =
+                (actor.group.userData.baseYaw || 0) +
+                (actor.group.userData.yaw || 0) +
+                (inCombat ? 0 : Math.sin(t * 2.2 + phase) * 0.2);
 
-        // Animation des parties du monstre (tentacules, yeux, ailes, dents…).
-        animateMonsterParts(actor.group, t);
+              // Animation des parties du monstre (tentacules, yeux, ailes, dents…).
+              animateMonsterParts(actor.group, t);
 
-        if (actor.labelEl) actor.labelEl.style.opacity = '1';
-      }
+              if (actor.labelEl) actor.labelEl.style.opacity = '1';
+            }
 
       // Decors au sol : jamais deplaces (visuel uniquement, jamais touchables).
       for (const prop of expeditionProps) {
