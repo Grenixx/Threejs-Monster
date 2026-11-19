@@ -1216,44 +1216,34 @@ export function createScene(canvas, options = {}) {
       const JOURNEY_START = -12;
       const JOURNEY_END = 12;
 
-      // ---- CAMÉRA : centrée sur le monstre du joueur, orbite libre ----
-      const playerActor = expeditionActors[0];
-      const paused = expeditionCombat && expeditionCombat.active;
-
-      // Réactive le suivi auto après 2s sans interaction caméra.
-      if (userMovedCamera) {
-        expeditionCamFollowTimer = (expeditionCamFollowTimer || 0) + dt;
-        if (expeditionCamFollowTimer > 2) {
-          userMovedCamera = false;
-          expeditionCamFollow = true;
-          expeditionCamFollowTimer = 0;
-        }
+      // Combat en cours ? l'escouade s'arrete et l'ennemi reste devant.
+      let inCombat = expeditionCombat && expeditionCombat.active;
+      if (inCombat && now - expeditionCombat.start > 3000) {
+        inCombat = false;
+        expeditionCombat.active = false;
+        expeditionCombat = null;
+        expeditionCombat.foe.dying = true;
+        expeditionCombat.foe.dyingAt = now;
       }
 
       let camZ;
-      if (!paused) {
-        camZ = JOURNEY_START + progress * (JOURNEY_END - JOURNEY_START);
-      } else {
+      if (inCombat) {
         camZ = expeditionCombat.foe.beatZ;
+      } else {
+        camZ = JOURNEY_START + progress * (JOURNEY_END - JOURNEY_START);
       }
 
-      if (expeditionCamFollow && playerActor && !userMovedCamera) {
-        const p = playerActor.group.position;
-        const targetZ = paused ? camZ : camZ - 2;
-        controls.target.set(p.x, p.y + 1.0, targetZ);
-        const camOffset = new THREE.Vector3(0, 1.4, 3.0);
-        camOffset.applyQuaternion(camera.quaternion);
-        camera.position.copy(p).add(camOffset);
-        camera.lookAt(controls.target);
+      // Camera : suit l'avancement, sauf si le joueur l'a deplacee ou si combat.
+      if (!userMovedCamera && !inCombat) {
+        controls.target.set(0, 0.95, camZ);
         controls.update();
         lockElevation();
       }
 
-      // ---- ESCOUADE DU JOUEUR : avance ou s'arrête en combat ----
+      // Escouade du joueur : avance ou attend pendant le combat.
       for (const actor of expeditionActors) {
         const phase = actor.phase;
-        if (paused) {
-          // Attendre pendant le combat.
+        if (inCombat) {
           actor.group.position.y = actor.baseY + Math.abs(Math.sin(t * 3 + phase)) * 0.02;
           actor.group.rotation.y = Math.sin(t * 1.5 + phase) * 0.1;
         } else {
@@ -1264,7 +1254,7 @@ export function createScene(canvas, options = {}) {
         actor.group.rotation.y =
           (actor.group.userData.baseYaw || 0) +
           (actor.group.userData.yaw || 0) +
-          (paused ? 0 : Math.sin(t * 2.2 + phase) * 0.2);
+          (inCombat ? 0 : Math.sin(t * 2.2 + phase) * 0.2);
 
         // Animation des parties du monstre (tentacules, yeux, ailes, dents…).
         animateMonsterParts(actor.group, t);
@@ -1272,51 +1262,43 @@ export function createScene(canvas, options = {}) {
         if (actor.labelEl) actor.labelEl.style.opacity = '1';
       }
 
-      // ---- DÉCORS AU SOL : ne bougent jamais (jamais touchables par le joueur) ----
+      // Decors au sol : jamais deplaces (visuel uniquement, jamais touchables).
       for (const prop of expeditionProps) {
         prop.position.y = prop.userData.baseY + Math.sin(t * 1.4 + prop.position.x) * 0.035;
         prop.rotation.y += prop.userData.spin * dt;
       }
 
-      // ---- RENCONTRES : combat qui met en pause, puis reprise ----
+      // Rencontres : declenche le combat, puis reprend la route.
       if (expeditionClock) {
-        // Déclenche le combat quand on atteint un ennemi vivant.
-        if (!expeditionCombat && progress < 1) {
+        if (!expeditionCombat && progress < 1 && !inCombat) {
+          const playerZ = camZ - 4;
           for (const foe of expeditionFoes) {
             if (foe.dying) continue;
-            const dist = camZ - foe.beatZ;
+            const dist = playerZ - foe.beatZ;
             if (dist < 3.5 && dist > -0.5) {
-              expeditionCombat = { active: true, foe, start: now, damageDealt: false };
+              expeditionCombat = { active: true, foe, start: now };
               break;
             }
           }
         }
 
         for (const foe of expeditionFoes) {
-          if (expeditionCombat && expeditionCombat.foe === foe) {
-            // EN COMBAT : l'ennemi reste devant le joueur.
+          if (expeditionCombat && expeditionCombat.foe === foe && expeditionCombat.active) {
+            // En combat : l'ennemi reste devant le joueur.
             foe.group.visible = true;
             foe.group.position.set(foe.laneX, foe.baseY, foe.beatZ);
             foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25;
             foe.group.scale.setScalar(foe.baseScale);
-
-            // L'ennemi meurt après le combat, on reprend la route.
-            if (now - expeditionCombat.start > 3000) {
-              foe.dying = true;
-              foe.dyingAt = now;
-              expeditionCombat.active = false;
-              expeditionCombat = null;
-            }
           } else if (foe.dying) {
-            // Mort : inverse du spawn, recule dans le brouillard derrière.
+            // Mort : inverse du spawn, recule dans le brouillard derriere.
             const k = Math.min(1, (now - foe.dyingAt) / 650);
             foe.group.visible = k < 1;
             foe.group.position.z = foe.beatZ + k * -7;
             foe.group.position.y = foe.baseY - k * 0.22;
             foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25 * (1 - k);
             foe.group.scale.setScalar(foe.baseScale * (1 - k * 0.55));
-          } else if (!expeditionCombat) {
-            // Pas de combat : apparaît de devant puis est croisé.
+          } else if (!expeditionCombat || !expeditionCombat.active) {
+            // Pas de combat : apparait de devant puis est croise.
             const dist = camZ - foe.beatZ;
             const approaching = dist < 6 && dist > -1;
             if (approaching) {
