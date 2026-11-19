@@ -1144,6 +1144,9 @@ export function createScene(canvas, options = {}) {
         // Orientation de base + rotation choisie par le joueur + oscillations du rôle.
         actor.group.rotation.y = (actor.group.userData.baseYaw || 0) + (actor.group.userData.yaw || 0) + roleYaw;
 
+        // Animation des parties du monstre (tentacules, yeux, ailes, dents…).
+        animateMonsterParts(actor.group, t);
+
         if (actor.labelEl) {
           actor.labelEl.style.opacity = '1';
         }
