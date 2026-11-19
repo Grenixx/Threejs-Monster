@@ -20,18 +20,19 @@ export const floorVert = /* glsl */`
   }
 
   void main() {
-    vec4 wp = modelMatrix * vec4(position, 1.0);
-    float disp = noise(wp.xz * 1.0) * 1.5;
-    wp.y += disp;
-    vWorldPos = wp.xyz;
-    // Normale approximée : gradient du noise sur XZ
-    float nx = noise((wp.xz + vec2(0.02, 0.0)) * 0.6) * 0.5;
-    float ny = noise((wp.xz + vec2(-0.02, 0.0)) * 0.6) * 0.5;
-    float nz = noise((wp.xz + vec2(0.0, 0.02)) * 0.6) * 0.5;
-    float nw = noise((wp.xz + vec2(0.0, -0.02)) * 0.6) * 0.5;
-    vNormal = normalize(vec3((nx - ny) * 50.0, 1.0, (nz - nw) * 50.0));
-    gl_Position = projectionMatrix * viewMatrix * wp;
-  }
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      float disp = noise(wp.xz * 0.8) * 3.0;
+      wp.y += disp;
+      vWorldPos = wp.xyz;
+      // Normale approximée : gradient du noise sur XZ (même fréquence que disp)
+      float eps = 0.02;
+      float nx = noise((wp.xz + vec2(eps, 0.0)) * 0.8) * 3.0;
+      float ny = noise((wp.xz + vec2(-eps, 0.0)) * 0.8) * 3.0;
+      float nz = noise((wp.xz + vec2(0.0, eps)) * 0.8) * 3.0;
+      float nw = noise((wp.xz + vec2(0.0, -eps)) * 0.8) * 3.0;
+      vNormal = normalize(vec3(nx - ny, 2.0 * eps, nz - nw));
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
 `;
 
 export const floorFrag = /* glsl */`

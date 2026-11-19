@@ -522,7 +522,7 @@ export function createScene(canvas, options = {}) {
 
   /** Hauteur du sol à (x, z), identique au vertex shader du sol. */
   function groundHeight(x, z) {
-    return groundNoise(x * 0.6, z * 0.6) * 0.5;
+    return groundNoise(x * 0.8, z * 0.8) * 3.0;
   }
 
   /** Normale du sol à (x, z), identique au vertex shader du sol. */
@@ -532,10 +532,10 @@ export function createScene(canvas, options = {}) {
     const hxm = groundHeight(x - eps, z);
     const hz = groundHeight(x, z + eps);
     const hzm = groundHeight(x, z - eps);
-    const nx = (hx - hxm) / (2 * eps);
-    const nz = (hz - hzm) / (2 * eps);
-    const len = Math.sqrt(nx * nx + 1 + nz * nz);
-    return new THREE.Vector3(-nx / len, 1 / len, -nz / len);
+    const dx = hx - hxm;
+    const dz = hz - hzm;
+    const len = Math.sqrt(dx * dx + 4 * eps * eps + dz * dz);
+    return new THREE.Vector3(dx / len, 2 * eps / len, dz / len);
   }
 
   /** Place un groupe sur le sol : position y = hauteur du sol + yOffset, rotation alignée sur la normale. */
