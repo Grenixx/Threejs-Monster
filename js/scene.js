@@ -228,17 +228,98 @@ export function createScene(canvas, options = {}) {
     uFogDensity: { value: 0.035 }
   };
   const floorMat = new THREE.ShaderMaterial({
-    vertexShader: floorVert,
-    fragmentShader: floorFrag,
-    uniforms: floorUniforms,
-    depthWrite: true
-  });
-  const floorGeo = new THREE.PlaneGeometry(200, 200, 256, 256);
+      vertexShader: floorVert,
+      fragmentShader: floorFrag,
+      uniforms: floorUniforms,
+      depthWrite: true
+    });
+
+    // Fonctions de bruit du sol (identiques au vertex shader floorVert).
+    function groundHash2(x, y) {
+      x = (x * 123.34) % 1;
+      y = (y * 456.21) % 1;
+      const d = x * (x + 45.32) + y * (y + 45.32);
+      return ((x + d) * (y + d)) % 1;
+    }
+
+    function groundNoise(x, y) {
+      const i = { x: Math.floor(x), y: Math.floor(y) };
+      const f = { x: x - i.x, y: y - i.y };
+      const u = f.x * f.x * (3.0 - 2.0 * f.x);
+      const v = f.y * f.y * (3.0 - 2.0 * f.y);
+      const a = groundHash2(i.x, i.y);
+      const b = groundHash2(i.x + 1, i.y);
+      const c = groundHash2(i.x, i.y + 1);
+      const d = groundHash2(i.x + 1, i.y + 1);
+      return (a + (b - a) * u) + ((c + (d - c) * u) - (a + (b - a) * u)) * v;
+    }
+
+    const floorGeo = new THREE.PlaneGeometry(200, 200, 512, 512);
+  // Déplace la géométrie du sol sur le CPU pour que le raycasting touche le vrai relief.
+  const floorPos = floorGeo.attributes.position;
+  const floorVertex = new THREE.Vector3();
+  for (let i = 0; i < floorPos.count; i++) {
+    floorVertex.fromBufferAttribute(floorPos, i);
+    const h = groundNoise(floorVertex.x * 0.8, floorVertex.y * 0.8) * 1.2;
+    floorVertex.z = h;
+    floorPos.setXYZ(i, floorVertex.x, floorVertex.y, floorVertex.z);
+  }
+  floorPos.needsUpdate = true;
+  floorGeo.computeVertexNormals();
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0;
   floor.renderOrder = 1;
   scene.add(floor);
+
+  // Raycaster dédié aux requêtes sur le sol déplacé.
+  const floorRaycaster = new THREE.Raycaster();
+  const floorRayOrigin = new THREE.Vector3();
+  const floorRayDir = new THREE.Vector3(0, -1, 0);
+
+  /**
+   * Raycast vers le bas depuis (x, z) pour trouver le point de contact et la normale
+   * sur le sol déplacé. Retourne {point, normal} ou null.
+   */
+  function raycastFloor(x, z) {
+    floorRayOrigin.set(x, 200, z);
+    floorRaycaster.set(floorRayOrigin, floorRayDir);
+    const hits = floorRaycaster.intersectObject(floor);
+    if (hits.length === 0) return null;
+    const hit = hits[0];
+    const worldNormal = hit.face.normal.clone().applyQuaternion(floor.quaternion);
+    return { point: hit.point.clone(), normal: worldNormal };
+  }
+
+  /** Hauteur du sol à (x, z) via raycast (identique au shader). */
+  function groundHeight(x, z) {
+    const hit = raycastFloor(x, z);
+    return hit ? hit.point.y : 0;
+  }
+
+  /** Normale du sol à (x, z) via raycast. */
+  function groundNormal(x, z) {
+    const hit = raycastFloor(x, z);
+    return hit ? hit.normal : new THREE.Vector3(0, 1, 0);
+  }
+
+  /** Place un groupe sur le sol via raycasting : y = point de contact, rotation alignée sur la normale. */
+  function placeOnGround(group, x, z, keepYaw = 0, yOffset = 0) {
+    const hit = raycastFloor(x, z);
+    if (!hit) {
+      group.position.set(x, yOffset, z);
+      return { pos: group.position.clone(), nrm: new THREE.Vector3(0, 1, 0) };
+    }
+    group.position.copy(hit.point).addScaledVector(hit.normal, yOffset);
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), hit.normal);
+    if (keepYaw) {
+      const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), keepYaw);
+      q.premultiply(qy);
+    }
+    group.quaternion.copy(q);
+    group.updateMatrixWorld();
+    return { pos: group.position.clone(), nrm: hit.normal };
+  }
 
   // -----------------------------------------------------------
   // PARTICULES
@@ -496,64 +577,6 @@ export function createScene(canvas, options = {}) {
     };
   }
 
-
-  // ------------------------------------------------ PROJECTION VECTORIELLE SUR LE SOL ----
-  // Reproduit exactement le noise du shader floorVert pour calculer la hauteur
-  // et la normale du sol à n'importe quel point (x, z). Les objets s'y posent
-  // donc réellement sur les collines.
-  function groundHash2(x, y) {
-    x = (x * 123.34) % 1;
-    y = (y * 456.21) % 1;
-    const d = x * (x + 45.32) + y * (y + 45.32);
-    return ((x + d) * (y + d)) % 1;
-  }
-
-  function groundNoise(x, y) {
-    const i = { x: Math.floor(x), y: Math.floor(y) };
-    const f = { x: x - i.x, y: y - i.y };
-    const u = f.x * f.x * (3.0 - 2.0 * f.x);
-    const v = f.y * f.y * (3.0 - 2.0 * f.y);
-    const a = groundHash2(i.x, i.y);
-    const b = groundHash2(i.x + 1, i.y);
-    const c = groundHash2(i.x, i.y + 1);
-    const d = groundHash2(i.x + 1, i.y + 1);
-    return (a + (b - a) * u) + ((c + (d - c) * u) - (a + (b - a) * u)) * v;
-  }
-
-  /** Hauteur du sol à (x, z), identique au vertex shader du sol. */
-  function groundHeight(x, z) {
-    return groundNoise(x * 0.8, z * 0.8) * 1.2;
-  }
-
-  /** Normale du sol à (x, z), identique au vertex shader du sol. */
-  function groundNormal(x, z) {
-    const eps = 0.02;
-    const hxp = groundHeight(x + eps, z);
-    const hxm = groundHeight(x - eps, z);
-    const hzp = groundHeight(x, z + eps);
-    const hzm = groundHeight(x, z - eps);
-    const dhx = (hxp - hxm) / (2 * eps);
-    const dhz = (hzp - hzm) / (2 * eps);
-    const len = Math.sqrt(dhx * dhx + 1 + dhz * dhz);
-    return new THREE.Vector3(-dhx / len, 1 / len, -dhz / len);
-  }
-
-  /** Place un groupe sur le sol : position y = hauteur du sol + yOffset, rotation alignée sur la normale. */
-  function placeOnGround(group, x, z, keepYaw = 0, yOffset = 0) {
-    const pos = new THREE.Vector3(x, groundHeight(x, z) + yOffset, z);
-    const nrm = groundNormal(x, z);
-    group.position.copy(pos);
-    const q = new THREE.Quaternion().setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0), nrm
-    );
-    if (keepYaw) {
-      const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), keepYaw);
-      q.premultiply(qy);
-    }
-    group.quaternion.copy(q);
-    group.updateMatrixWorld();
-    return { pos, nrm };
-  }
 
   /**
    * Créature d'expédition : assemblage de primitives, teinté par la zone.
