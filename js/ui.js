@@ -9,7 +9,8 @@ import {
 import {
   monsterStats, monsterPower, capacityOf, validSocketsFor, nextLevelXp,
   formatNumber, formatDuration, formatClock, fairPrice, priceRange,
-  monsterValue, expeditionRates, groupExpeditionRates, zonePower, partTotalStats, durationFor
+  monsterValue, expeditionRates, groupExpeditionRates, zonePower, partTotalStats, durationFor,
+  expeditionJournal
 } from './economy.js';
 import { icon, hydrateIcons } from './icons.js';
 import { raidLootHint, raidTargetLabel, attackScore, cargoCapacity, RAID, defenseUpgradeBonus } from './raid.js';
@@ -675,11 +676,25 @@ export class UI {
             return `<span class="chip" style="color:${role.color}">${icon(role.icon, 10)} ${esc(m.name)}</span>`;
           }).join('')}
         </div>
+        <div class="exp-journal" data-journal="${exp.id}">${this.expeditionJournalHtml(exp)}</div>
         ${ready
           ? `<button class="btn primary wide" type="button" data-action="claim-expedition" data-id="${exp.id}">Récolter le butin</button>`
           : `<span class="tiny dim">Durée ${formatDuration(exp.duration)} · ${members.length > 1 ? 'escouade' : 'attributs'} appliqués au retour</span>`}
       </div>
     </section>`;
+  }
+
+  /** Journal déroulant d'une expédition (Fallout style). */
+  expeditionJournalHtml(exp) {
+    const zone = ZONE_BY_ID[exp.zoneId];
+    const members = this.game.expeditionMembers(exp);
+    if (!zone || !members.length) return '';
+    const lines = expeditionJournal(exp, members, zone).slice(-10);
+    return lines.map(line => `<div class="jrow ${line.kind}">
+        <span class="jtime">${formatClock(line.t)}</span>
+        <span class="jicon">${icon(line.icon, 12)}</span>
+        <span class="jtext">${esc(line.text)}</span>
+      </div>`).join('');
   }
 
   activeRaidCard(raid) {
@@ -1959,13 +1974,16 @@ export class UI {
             name: raid.target?.name || 'Razzia'
           };
 
-      const key = `${mode}|${members.map(m => `${m.uid}:${m.level}:${m.role}:${m.hue}:${m.attachments.map(a => a.part.uid + '@' + a.socket).join(',')}`).join('~')}|${zone.id}`;
+      const key = `${mode}|${expedition ? expedition.id : raid.id}|${members.map(m => `${m.uid}:${m.level}:${m.role}:${m.hue}:${m.attachments.map(a => a.part.uid + '@' + a.socket).join(',')}`).join('~')}|${zone.id}`;
       if (key === this.lastKey) return;
 
       this.scene.setExpedition(members, {
         zone,
         mode,
-        leaderId: expedition ? expedition.monsterId : monster.uid
+        leaderId: expedition ? expedition.monsterId : monster.uid,
+        beats: expedition ? expedition.beats || [] : [],
+        startedAt: expedition ? expedition.startedAt : undefined,
+        duration: expedition ? expedition.duration : undefined
       });
       this.lastKey = key;
       this.lastMonsterUid = monster.uid;
@@ -2023,6 +2041,13 @@ export class UI {
       el.textContent = remaining <= 0 ? '00:00' : formatClock(remaining / 1000);
       const parent = el.closest('.exp-live, .se, .stage-expedition');
       if (parent) parent.classList.toggle('ready', remaining <= 0);
+    });
+
+    document.querySelectorAll('[data-journal]').forEach(el => {
+      const exp = this.game.state.expeditions.find(e => e.id === el.dataset.journal);
+      if (!exp) return;
+      const html = this.expeditionJournalHtml(exp);
+      if (el.innerHTML !== html) el.innerHTML = html;
     });
 
     document.querySelectorAll('[data-progress]').forEach(el => {

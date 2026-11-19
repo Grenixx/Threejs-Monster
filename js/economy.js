@@ -557,3 +557,138 @@ export function formatClock(seconds) {
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
+
+// -------------------------------------------------------------
+// EXPÉDITIONS — RENCONTRES, BESTIAIRE ET JOURNAL
+// -------------------------------------------------------------
+// Les rencontres sont tirées de la graine de l'expédition : elles sont donc
+// identiques au rechargement et calculables même hors ligne. Aucune d'entre
+// elles ne modifie les PV (déjà simulés en continu) : le journal se contente
+// d'expliquer la courbe de vie.
+
+export const EXPEDITION_BEASTS = {
+  fosses: [
+    { id: 'radcafard', name: 'Radcafard', shape: 'roach', shift: -0.04 },
+    { id: 'spore', name: 'Spore grouillante', shape: 'blob', shift: 0.02 },
+    { id: 'ver-souche', name: 'Ver de souche', shape: 'worm', shift: -0.08 }
+  ],
+  sel: [
+    { id: 'scarabee', name: 'Scarabée de sel', shape: 'roach', shift: 0.02 },
+    { id: 'chien-poussiere', name: 'Chien de poussière', shape: 'beast', shift: -0.03 },
+    { id: 'racine', name: 'Racine sèche', shape: 'worm', shift: 0.05 }
+  ],
+  verre: [
+    { id: 'eclat-rampant', name: 'Éclat rampant', shape: 'blob', shift: 0.04 },
+    { id: 'veuve-verre', name: 'Veuve de verre', shape: 'roach', shift: 0.02 },
+    { id: 'miroir', name: 'Miroir hurlant', shape: 'eye', shift: -0.05 }
+  ],
+  nebuleuse: [
+    { id: 'spectre-gaz', name: 'Spectre de gaz', shape: 'eye', shift: 0.03 },
+    { id: 'oeil-mort', name: 'Œil mort', shape: 'eye', shift: -0.02 },
+    { id: 'priere', name: 'Prière flottante', shape: 'blob', shift: 0.06 }
+  ],
+  ventre: [
+    { id: 'parasite', name: 'Parasite digestif', shape: 'worm', shift: -0.01 },
+    { id: 'langue', name: 'Langue du Ventre', shape: 'beast', shift: 0.02 },
+    { id: 'gardien-chair', name: 'Gardien de chair', shape: 'eye', shift: 0.03 }
+  ]
+};
+
+export function beastsForZone(zone) {
+  return EXPEDITION_BEASTS[zone?.id] || EXPEDITION_BEASTS.fosses;
+}
+
+/**
+ * Tire les rencontres d'une expédition à partir de sa graine.
+ * @returns {Array<{id:string, at:number, kind:string, beast:object|null, targetUid:string|null, amount:number}>}
+ */
+export function expeditionBeats(members, zone, seed, duration) {
+  const list = (members || []).filter(Boolean);
+  if (!list.length) return [];
+  const rng = mulberry32((seed >>> 0) || 1);
+  const beasts = beastsForZone(zone);
+  // Une rencontre toutes les ~15 % du trajet, entre 4 et 7 au total.
+  const count = 4 + Math.floor(rng() * 4);
+  const beats = [];
+  for (let i = 0; i < count; i++) {
+    const at = +(0.12 + ((i + 1) * 0.78) / (count + 1)).toFixed(3);
+    const roll = rng();
+    const target = list[Math.floor(rng() * list.length)] || list[0];
+    const beast = beasts[Math.floor(rng() * beasts.length)] || beasts[0];
+    const kind = roll < 0.62 ? 'enemy' : roll < 0.88 ? 'loot' : 'relic';
+    beats.push({
+      id: `beat${i}`,
+      at,
+      kind,
+      beast: kind === 'enemy'
+        ? { id: beast.id, name: beast.name, shape: beast.shape, hue: (zone.hue + beast.shift + 1) % 1 }
+        : null,
+      targetUid: target.uid,
+      amount: 6 + Math.floor(rng() * 18)
+    });
+  }
+  return beats;
+}
+
+/** Progression temporelle d'une rencontre (0 → 1). */
+export function expeditionProgressAt(exp, now = Date.now()) {
+  const duration = Math.max(1, exp.duration || 1);
+  return clamp((now - exp.startedAt) / (duration * 1000), 0, 1);
+}
+
+/**
+ * Journal d'une expédition : les lignes déjà survenues, prêtes à afficher.
+ * @returns {Array<{t:number, kind:string, icon:string, text:string}>}
+ */
+export function expeditionJournal(exp, members, zone, now = Date.now()) {
+  const list = (members || []).filter(Boolean);
+  const lines = [];
+  if (!list.length) return lines;
+  const duration = Math.max(1, exp.duration || 1);
+  const names = list.map(m => m.name).join(' · ');
+  lines.push({ t: 0, kind: 'start', icon: 'compass', text: `Départ du labo : ${names} vers ${zone.name}.` });
+
+  const hpOf = (member, time) => calculateExpeditionHpAtTime(member, zone, exp.startedAt, time, duration).hp;
+
+  for (const beat of exp.beats || []) {
+    const time = exp.startedAt + beat.at * duration * 1000;
+    if (now < time) break;
+    const secs = Math.round(beat.at * duration);
+    const target = list.find(m => m.uid === beat.targetUid) || list[0];
+
+    if (beat.kind === 'enemy' && beat.beast) {
+      lines.push({
+        t: secs, kind: 'threat', icon: 'jaw',
+        text: `${beat.beast.name} surgit devant ${target.name}.`
+      });
+      const before = hpOf(target, time - duration * 1000 * 0.04);
+      const after = hpOf(target, Math.min(now, time + duration * 1000 * 0.02));
+      const dmg = Math.max(1, Math.round(before - after));
+      lines.push({
+        t: secs, kind: 'damage', icon: 'sword',
+        text: `${beat.beast.name} griffe ${target.name} : −${dmg} PV.`
+      });
+      lines.push({
+        t: secs, kind: 'kill', icon: 'skull',
+        text: `${target.name} l'abat et reprend la marche.`
+      });
+    } else if (beat.kind === 'loot') {
+      lines.push({
+        t: secs, kind: 'loot', icon: 'biomass',
+        text: `${target.name} fouille une carcasse éventrée : +${beat.amount} biomasse.`
+      });
+    } else {
+      lines.push({
+        t: secs, kind: 'relic', icon: 'crystal',
+        text: `${target.name} déniche un éclat intact sous la poussière.`
+      });
+    }
+  }
+
+  if (now >= exp.endsAt) {
+    lines.push({ t: Math.round(duration), kind: 'return', icon: 'check', text: 'Retour au labo : le butin est prêt.' });
+  } else {
+    lines.push({ t: Math.round(expeditionProgressAt(exp, now) * duration), kind: 'moving', icon: 'arrow', text: 'Le groupe progresse…' });
+  }
+  return lines;
+}

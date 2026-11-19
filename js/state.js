@@ -11,7 +11,8 @@ import {
   capacityOf, canAttach, autoPlacements, applyXp, nextLevelXp,
   expeditionRates, groupExpeditionRates, resolveGroupExpedition,
   fairPrice, monsterValue, formatNumber, formatDuration, zonePower, roleOf,
-  monsterMaxHp, expeditionDps, calculateExpeditionHpAtTime, calculateGroupExpeditionHpAtTime, isMonsterDead
+  monsterMaxHp, expeditionDps, calculateExpeditionHpAtTime, calculateGroupExpeditionHpAtTime, isMonsterDead,
+  expeditionBeats, expeditionJournal
 } from './economy.js';
 import {
   npcLabs, attackerSnapshot, resolveRaid, raidDuration, labDefense, defenseUpgradeBonus
@@ -708,6 +709,8 @@ export class Game {
       // Track HP at start for recall calculations
       startHp: members.map(m => ({ uid: m.uid, hp: m.currentHp, maxHp: monsterMaxHp(m) }))
     };
+    // Rencontres déterministes : le journal et les ennemis 3D en dérivent.
+    exp.beats = expeditionBeats(members, zone, exp.seed, rates.duration);
     this.state.expeditions.push(exp);
     const names = members.map(m => m.name).join(', ');
     logEntry(

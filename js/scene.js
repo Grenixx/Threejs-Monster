@@ -302,6 +302,8 @@ export function createScene(canvas, options = {}) {
   let expeditionRoot = null;
   let expeditionActors = [];
   let expeditionProps = [];
+  let expeditionFoes = [];
+  let expeditionClock = null;   // { startedAt, duration }
   let expeditionMode = false;
   let currentZone = null;
 
@@ -411,6 +413,20 @@ export function createScene(canvas, options = {}) {
     return el;
   }
 
+  /** Étiquette flottante d'un ennemi (nom + « hostile »). */
+  function createFoeLabel(beast) {
+    if (!labelLayer) return null;
+    const el = document.createElement('div');
+    el.className = 'actor-label foe';
+    const name = document.createElement('b');
+    name.textContent = beast.name;
+    const kind = document.createElement('span');
+    kind.textContent = 'HOSTILE';
+    el.append(name, kind);
+    labelLayer.appendChild(el);
+    return el;
+  }
+
   function clearActorLabels() {
     if (labelLayer) labelLayer.replaceChildren();
   }
@@ -434,6 +450,23 @@ export function createScene(canvas, options = {}) {
       actor.labelEl.style.top = `${y}px`;
       actor.labelEl.style.opacity = visible ? '1' : '0';
     }
+
+    for (const foe of expeditionFoes) {
+      if (!foe.labelEl) continue;
+      if (!foe.group.visible) {
+        foe.labelEl.style.opacity = '0';
+        continue;
+      }
+      foe.group.getWorldPosition(v);
+      v.y += 0.95;
+      v.project(camera);
+      const x = (v.x * 0.5 + 0.5) * rect.width;
+      const y = (-v.y * 0.5 + 0.5) * rect.height;
+      const visible = v.z < 1 && x > -120 && x < rect.width + 120 && y > -60 && y < rect.height + 80;
+      foe.labelEl.style.left = `${x}px`;
+      foe.labelEl.style.top = `${y}px`;
+      foe.labelEl.style.opacity = visible ? '1' : '0';
+    }
   }
 
   function hashText(text) {
@@ -454,6 +487,89 @@ export function createScene(canvas, options = {}) {
       t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
+  }
+
+  /**
+   * Créature d'expédition : assemblage de primitives, teinté par la zone.
+   * Les formes sont volontairement simples (silhouette lisible en pixel-art).
+   */
+  function buildBeast(beast) {
+    const group = new THREE.Group();
+    group.name = `foe-${beast.id}`;
+    const hue = beast.hue ?? 0.28;
+    const skin = new THREE.Color().setHSL(hue, 0.42, 0.26);
+    const glow = new THREE.Color().setHSL((hue + 0.03) % 1, 0.9, 0.62);
+    const flesh = new THREE.MeshStandardMaterial({ color: skin, roughness: 0.92, metalness: 0.04 });
+    const shine = new THREE.MeshStandardMaterial({
+      color: glow, emissive: glow, emissiveIntensity: 1.6, roughness: 0.35
+    });
+
+    if (beast.shape === 'worm') {
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.5, 4, 8), flesh);
+      body.rotation.z = Math.PI / 2.6;
+      body.position.y = 0.22;
+      group.add(body);
+      for (let i = 0; i < 3; i++) {
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.13 - i * 0.02, 0.025, 6, 10), flesh);
+        ring.rotation.y = Math.PI / 2;
+        ring.position.set(-0.18 + i * 0.16, 0.24 - i * 0.02, 0);
+        group.add(ring);
+      }
+      const maw = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 5), shine);
+      maw.position.set(0.32, 0.2, 0);
+      group.add(maw);
+    } else if (beast.shape === 'eye') {
+      const hull = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 10), flesh);
+      hull.scale.set(1, 0.9, 0.95);
+      hull.position.y = 0.42;
+      const iris = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), shine);
+      iris.position.set(0, 0.42, 0.2);
+      group.add(hull, iris);
+      for (let i = 0; i < 4; i++) {
+        const root = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.02, 0.24, 4), flesh);
+        root.position.set(Math.cos(i * 1.6) * 0.16, 0.14, Math.sin(i * 1.6) * 0.16);
+        root.rotation.z = Math.cos(i * 1.6) * 0.4;
+        group.add(root);
+      }
+    } else {
+      // Quadrupède / cafard : corps aplati, pattes, antennes.
+      const quadruped = beast.shape === 'beast';
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), flesh);
+      body.scale.set(quadruped ? 1.35 : 1.1, quadruped ? 0.75 : 0.42, quadruped ? 0.9 : 0.75);
+      body.position.y = quadruped ? 0.34 : 0.2;
+      group.add(body);
+
+      const head = new THREE.Mesh(new THREE.SphereGeometry(quadruped ? 0.16 : 0.12, 8, 6), flesh);
+      head.position.set(quadruped ? 0.34 : 0.24, quadruped ? 0.4 : 0.22, 0);
+      group.add(head);
+
+      for (const side of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), shine);
+        eye.position.set(head.position.x + 0.05, head.position.y + 0.04, side * 0.08);
+        group.add(eye);
+      }
+
+      const legCount = quadruped ? 4 : 6;
+      for (let i = 0; i < legCount; i++) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.012, quadruped ? 0.3 : 0.2, 4), flesh);
+        const t = legCount === 1 ? 0 : i / (legCount - 1);
+        leg.position.set(quadruped ? -0.24 + t * 0.5 : -0.22 + t * 0.44, (quadruped ? 0.15 : 0.09), (i % 2 ? 1 : -1) * 0.2);
+        leg.rotation.x = (i % 2 ? 1 : -1) * 0.5;
+        group.add(leg);
+      }
+
+      if (!quadruped) {
+        for (const side of [-1, 1]) {
+          const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.004, 0.3, 4), flesh);
+          antenna.position.set(0.3, 0.3, side * 0.06);
+          antenna.rotation.z = -0.9 + side * 0.15;
+          group.add(antenna);
+        }
+      }
+    }
+
+    group.userData.baseScale = 1;
+    return { group, baseY: 0, baseScale: 1, phase: 0, beat: null, dying: false, dyingAt: 0 };
   }
 
   function buildEnvironment(zone) {
@@ -546,6 +662,8 @@ export function createScene(canvas, options = {}) {
     }
     expeditionActors = [];
     expeditionProps = [];
+    expeditionFoes = [];
+    expeditionClock = null;
     expeditionMode = false;
     currentZone = null;
   }
@@ -628,6 +746,29 @@ export function createScene(canvas, options = {}) {
     const environment = buildEnvironment(zone);
     root.add(environment);
     expeditionProps = environment.children.slice();
+
+    // Ennemis : un par rencontre armée, tirés de la graine de l'expédition.
+    expeditionClock = {
+      startedAt: opts.startedAt || Date.now(),
+      duration: Math.max(1, opts.duration || 60)
+    };
+    expeditionFoes = [];
+    for (const beat of opts.beats || []) {
+      if (beat.kind !== 'enemy' || !beat.beast) continue;
+      const foe = buildBeast(beat.beast);
+      const lane = (expeditionFoes.length % 2 === 0 ? -1 : 1) * (0.35 + (expeditionFoes.length % 3) * 0.3);
+      foe.group.position.set(beat.targetUid ? lane : 0, 0, -7);
+      foe.baseY = 0;
+      foe.baseScale = 1;
+      foe.phase = expeditionFoes.length * 1.9;
+      foe.beat = beat;
+      foe.dying = false;
+      foe.dyingAt = 0;
+      foe.group.visible = false;
+      foe.labelEl = createFoeLabel(beat.beast);
+      root.add(foe.group);
+      expeditionFoes.push(foe);
+    }
 
     applyPalette(opts.hue ?? zone.hue);
     expeditionMode = true;
@@ -1036,6 +1177,38 @@ export function createScene(canvas, options = {}) {
         if (prop.position.z > 4.5) prop.position.z -= 11;
         prop.position.y = prop.userData.baseY + Math.sin(t * 1.4 + prop.position.x) * 0.035;
         prop.rotation.y += prop.userData.spin * dt;
+      }
+
+      // Rencontres : chaque ennemi sort du brouillard puis se fait abattre à
+      // l'instant de sa rencontre, comme un combat de quête Fallout Shelter.
+      if (expeditionClock) {
+        const now = Date.now();
+        const span = expeditionClock.duration * 1000;
+        const progress = Math.max(0, Math.min(1, (now - expeditionClock.startedAt) / span));
+        for (const foe of expeditionFoes) {
+          const appear = Math.max(0, foe.beat.at - 0.24);
+          if (!foe.dying && progress >= foe.beat.at) {
+            foe.dying = true;
+            foe.dyingAt = now;
+            if (foe.labelEl) foe.labelEl.style.opacity = '0';
+          }
+          if (foe.dying) {
+            const k = Math.min(1, (now - foe.dyingAt) / 650);
+            foe.group.visible = k < 1;
+            foe.group.rotation.z = k * 1.3;
+            foe.group.position.y = foe.baseY - k * 0.22;
+            foe.group.scale.setScalar(foe.baseScale * (1 - k * 0.55));
+          } else if (progress >= appear) {
+            const k = Math.min(1, (progress - appear) / 0.24);
+            foe.group.visible = true;
+            foe.group.position.z = -7 + k * 7.4;
+            foe.group.position.y = foe.baseY + Math.abs(Math.sin(t * 7 + foe.phase)) * 0.05 * k;
+            foe.group.rotation.y = Math.sin(t * 2.2 + foe.phase) * 0.25;
+            foe.group.scale.setScalar(foe.baseScale * (0.55 + 0.45 * k));
+          } else if (foe.group.visible) {
+            foe.group.visible = false;
+          }
+        }
       }
 
       if (expeditionRoot) {
