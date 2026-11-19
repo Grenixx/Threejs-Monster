@@ -302,6 +302,7 @@ export function createScene(canvas, options = {}) {
   let hoveredMarker = null;
   let baseGroupY = 0;
   let expeditionRoot = null;
+  let expeditionLights = [];
   let expeditionActors = [];
   let expeditionProps = [];
   let expeditionFoes = [];
@@ -672,6 +673,28 @@ export function createScene(canvas, options = {}) {
     return group;
   }
 
+  /** Lumières flottantes sur le chemin d'expédition pour éclairer le monstre. */
+  function buildJourneyLights(zone) {
+    const group = new THREE.Group();
+    group.name = 'expedition-journey-lights';
+    const count = 12;
+    const color = new THREE.Color().setHSL((zone.hue + 0.05) % 1, 0.8, 0.5);
+    for (let i = 0; i < count; i++) {
+      const z = -11 + (i / (count - 1)) * 22;
+      const x = (Math.sin(i * 1.7) * 1.2);
+      const light = new THREE.PointLight(color, 2, 6, 2);
+      light.position.set(x, 1.4, z);
+      light.castShadow = false;
+      light.userData.baseZ = z;
+      light.userData.baseX = x;
+      light.userData.baseY = 1.4;
+      light.userData.phase = i * 1.3;
+      group.add(light);
+      expeditionLights.push(light);
+    }
+    return group;
+  }
+
   function buildEnvironment(zone) {
     const group = new THREE.Group();
     group.name = 'expedition-environment';
@@ -763,6 +786,7 @@ export function createScene(canvas, options = {}) {
     expeditionActors = [];
     expeditionProps = [];
     expeditionFoes = [];
+    expeditionLights = [];
     expeditionClock = null;
     expeditionMode = false;
     currentZone = null;
@@ -878,6 +902,9 @@ export function createScene(canvas, options = {}) {
     const journeyResources = buildJourneyResources(zone, journeyRng);
     root.add(journeyResources);
     expeditionProps = expeditionProps.concat(journeyResources.children.slice());
+
+    const journeyLights = buildJourneyLights(zone);
+    root.add(journeyLights);
 
     // Ennemis : un par rencontre armée, tirés de la graine de l'expédition.
     // Ils sont assemblés comme des monstres joueurs et recolorés au biome.
@@ -1400,6 +1427,11 @@ export function createScene(canvas, options = {}) {
 
       if (expeditionRoot) {
         expeditionRoot.position.y = Math.sin(t * 1.1) * 0.005;
+      }
+      // Animer les lumières du chemin (flottaison)
+      for (const light of expeditionLights) {
+        light.position.y = light.userData.baseY + Math.sin(t * 2 + light.userData.phase) * 0.15;
+        light.position.x = light.userData.baseX + Math.cos(t * 1.5 + light.userData.phase) * 0.1;
       }
       updateActorLabels();
     }
