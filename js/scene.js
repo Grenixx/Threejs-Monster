@@ -805,6 +805,9 @@ export function createScene(canvas, options = {}) {
     root.add(environment);
     expeditionProps = environment.children.slice();
 
+    // Graine de l'expédition (déterministes pour ennemis et ressources).
+    const expSeed = opts.seed || Math.floor(Math.random() * 2 ** 31);
+
     // Ressources au sol sur tout le chemin de l'expédition (visuel uniquement,
     // jamais touchables par le joueur).
     const journeyRng = seededRandom(expSeed + 777);
@@ -819,7 +822,6 @@ export function createScene(canvas, options = {}) {
       duration: Math.max(1, opts.duration || 60)
     };
     expeditionFoes = [];
-    const expSeed = opts.seed || Math.floor(Math.random() * 2 ** 31);
     const JOURNEY_START = -12;
     const JOURNEY_END = 12;
     for (const beat of opts.beats || []) {
