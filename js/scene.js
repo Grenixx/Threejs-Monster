@@ -776,6 +776,7 @@ export function createScene(canvas, options = {}) {
   function setExpedition(monsters, opts = {}) {
     userMovedCamera = false;
     expeditionCamFollowTimer = 0;
+    lastCameraTarget = null;
 
     const list = (monsters || []).filter(Boolean);
     if (!list.length) return;
@@ -1203,6 +1204,7 @@ export function createScene(canvas, options = {}) {
   }
 
   let userMovedCamera = false;
+  let lastCameraTarget = null;
   controls.addEventListener('start', () => { userMovedCamera = true; });
 
   function frameCamera() {
@@ -1299,28 +1301,27 @@ export function createScene(canvas, options = {}) {
         camZ = JOURNEY_START + progress * (JOURNEY_END - JOURNEY_START);
       }
 
-      // Camera : centre sur le monstre du joueur (escouade), sauf si le joueur
-      // l'a deplacee (reactivation auto apres 2s sans interaction) ou si combat.
+      // Camera : suit TOUJOURS le monstre du joueur (escouade), même pendant
+      // l'orbite du joueur. Quand le monstre avance, on décale target ET
+      // camera.position du même delta pour conserver l'angle de vue choisi
+      // par l'utilisateur. La caméra fait toujours face au monstre.
       const leader = expeditionActors[0];
-      if (userMovedCamera) {
-        expeditionCamFollowTimer += dt * 1000;
-        if (expeditionCamFollowTimer >= 2000) {
-          userMovedCamera = false;
-          expeditionCamFollowTimer = 0;
-        }
-      } else {
-        expeditionCamFollowTimer = 0;
-      }
-
-      if (!userMovedCamera && !inCombat && leader) {
+      if (leader && !inCombat) {
         const targetPos = leader.group.position.clone();
         targetPos.y += 1.2; // regarde un peu au-dessus du monstre
+
+        if (!lastCameraTarget) {
+          lastCameraTarget = targetPos.clone();
+        }
+
+        const delta = new THREE.Vector3().subVectors(targetPos, lastCameraTarget);
         controls.target.copy(targetPos);
-        // Place la caméra derrière et au-dessus du monstre pour qu'il reste dans le cadre.
-        const camOffset = new THREE.Vector3(0, 1.8, 5);
-        camera.position.copy(targetPos).add(camOffset);
+        camera.position.add(delta); // même décalage pour la caméra : angle conservé
         controls.update();
         lockElevation();
+        lastCameraTarget.copy(targetPos);
+      } else if (leader) {
+        lastCameraTarget = null; // réinit au prochain frame hors combat
       }
 
       // Escouade du joueur : avance ou attend pendant le combat.
