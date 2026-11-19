@@ -1688,7 +1688,52 @@ export class UI {
 
   claimOne(id) {
     const result = this.game.claimExpedition(id);
-    if (!result.ok) this.toast(result.reason, 'warn');
+    if (!result.ok) {
+      this.toast(result.reason, 'warn');
+      return;
+    }
+    this.openClaimRewardModal(result);
+  }
+
+  /** Modal de récompense quand on récupère une expédition terminée. */
+  openClaimRewardModal(result) {
+    const { monsters, zone, outcome, parts, memberLevels, converted } = result;
+    const partsHtml = (parts || []).map(part => `
+      <div class="attach-row">
+        <span class="part-tile rar-${part.rarity}">${icon(PART_TYPES[part.type].icon, 16)}</span>
+        <span class="meta"><b>${esc(part.name)}</b><span>${RARITIES[part.rarity].label} · ${statText(part)}</span></span>
+      </div>
+    `).join('');
+
+    this.openModal(`
+      ${this.modalHead(
+        'Expédition terminée',
+        zone.name,
+        `${monsters.map(m => m.name).join(', ')} rentre au laboratoire.`
+      )}
+      <div class="modal-body">
+        <div class="reward-burst">
+          <div class="reward-big">${icon('biomass', 18)}<b>+${formatNumber(outcome.biomass)}</b><span>Biomasse</span></div>
+          <div class="reward-big">${icon('shards', 18)}<b>+${formatNumber(outcome.shards)}</b><span>Éclats</span></div>
+          <div class="reward-big">${icon('bolt', 18)}<b>+${formatNumber(outcome.xpEach)}</b><span>XP / spécimen</span></div>
+        </div>
+        <div class="chips" style="margin-bottom:8px">
+          ${monsters.map(m => {
+            const role = ROLES[m.role] || ROLES.harvester;
+            return `<span class="chip" style="color:${role.color}">${icon(role.icon, 10)} ${esc(m.name)} · ${role.label}</span>`;
+          }).join('')}
+        </div>
+        ${memberLevels && memberLevels.length > 0
+          ? `<div class="notice mint">${icon('bolt', 15)}<span><b>${memberLevels.length} montée(s) de niveau</b> · ${memberLevels.map(m => `${m.name} → Nv.${m.level}`).join(' · ')}</span></div>`
+          : ''}
+        ${converted ? `<div class="notice" style="margin-top:8px">${icon('info', 15)}<span>Inventaire plein : ${formatNumber(converted)} biomasse supplémentaires.</span></div>` : ''}
+        <div class="loot-title"><span class="eyebrow">Parties trouvées</span><span class="line"></span><span class="tiny dim mono">${(parts || []).length}</span></div>
+        <div class="part-list">${partsHtml || '<div class="empty-state">Rien cette fois-ci.</div>'}</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" type="button" data-modal-action="close">Ranger le butin</button>
+      </div>
+    `);
   }
 
   recallOne(id) {
